@@ -1,0 +1,53 @@
+{
+  "name": "workspace-hub",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Modern-style cross-board web client for Trello",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
+  },
+  "keywords": [
+    "trello",
+    "trello-client",
+    "task-manager",
+    "project-management",
+    "workspace-hub",
+    "kanban",
+    "dashboard",
+    "calendar",
+    "productivity",
+    "vue3",
+    "typescript",
+    "pinia",
+    "tailwindcss"
+  ],
+  "author": "Dmytro Gural",
+  "license": "MIT",
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "lucide-vue-next": "^1.0.0",
+    "luxon": "^3.7.2",
+    "pinia": "^4.1.0",
+    "vue": "^3.5.45",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/luxon": "^3.7.6",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "autoprefixer": "^10.6.2",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.7",
+    "vue-tsc": "^3.3.14"
+  }
+}
