@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --modern-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  font-family: var(--modern-font);
+  color: #1e1f21;
+}
+
+/* Custom scrollbars like Asana */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d3d1d0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b5b3b2;
+}
+
+/* Checkbox button animation */
+.modern-check-btn {
+  transition: all 0.15s ease-in-out;
+}
+
+.modern-check-btn:hover {
+  transform: scale(1.08);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-drawer-enter-active,
+.slide-drawer-leave-active {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slide-drawer-enter-from,
+.slide-drawer-leave-to {
+  transform: translateX(100%);
+}

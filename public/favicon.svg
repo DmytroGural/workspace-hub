@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Workspace Hub</title>
+  <defs>
+    <linearGradient id="hubBg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e2028" />
+      <stop offset="100%" stop-color="#2a3154" />
+    </linearGradient>
+    <linearGradient id="hubBorder" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f06a6a" stop-opacity="0.55" />
+      <stop offset="50%" stop-color="#4573d2" stop-opacity="0.65" />
+      <stop offset="100%" stop-color="#48cfad" stop-opacity="0.55" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded Squircle Base -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#hubBg)" />
+  <rect
+    x="2.75"
+    y="2.75"
+    width="58.5"
+    height="58.5"
+    rx="14.25"
+    fill="none"
+    stroke="url(#hubBorder)"
+    stroke-width="1.5"
+  />
+
+  <!-- Unified Cross-Board Grid & Spokes -->
+  <rect
+    x="17"
+    y="17"
+    width="30"
+    height="30"
+    rx="8"
+    fill="none"
+    stroke="#ffffff"
+    stroke-opacity="0.16"
+    stroke-width="2"
+  />
+  <line
+    x1="17"
+    y1="17"
+    x2="47"
+    y2="47"
+    stroke="#cbd5e1"
+    stroke-opacity="0.5"
+    stroke-width="3.5"
+    stroke-linecap="round"
+  />
+  <line
+    x1="47"
+    y1="17"
+    x2="17"
+    y2="47"
+    stroke="#cbd5e1"
+    stroke-opacity="0.5"
+    stroke-width="3.5"
+    stroke-linecap="round"
+  />
+
+  <!-- Distinct Provider / Workspace Nodes -->
+  <circle cx="17" cy="17" r="6" fill="#f06a6a" stroke="#1e2233" stroke-width="2" />
+  <circle cx="47" cy="17" r="6" fill="#4fc1e9" stroke="#1e2233" stroke-width="2" />
+  <circle cx="17" cy="47" r="6" fill="#48cfad" stroke="#1e2233" stroke-width="2" />
+  <circle cx="47" cy="47" r="6" fill="#ac92ec" stroke="#1e2233" stroke-width="2" />
+
+  <!-- Central Unified Task Hub -->
+  <rect
+    x="21"
+    y="21"
+    width="22"
+    height="22"
+    rx="6.5"
+    fill="#ffffff"
+    stroke="#1e2233"
+    stroke-width="2.5"
+  />
+  <path
+    d="M26.5 32.2L30.2 35.8L37.8 28.2"
+    fill="none"
+    stroke="#4573d2"
+    stroke-width="3.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

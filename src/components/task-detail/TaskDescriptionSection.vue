@@ -1,0 +1,198 @@
+<script setup lang="ts">
+import { AlertCircle, Loader2, Paperclip } from 'lucide-vue-next';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import type { TaskAttachment } from '@/types/domain';
+import TaskAttachmentList from './TaskAttachmentList.vue';
+
+const props = withDefaults(
+  defineProps<{
+    taskId?: string;
+    description: string;
+    attachments?: TaskAttachment[];
+    canEdit?: boolean;
+    canManageAttachments?: boolean;
+    isUploading?: boolean;
+    error?: string | null;
+    layout?: 'drawer' | 'stacked';
+    placeholder?: string;
+  }>(),
+  {
+    taskId: '',
+    attachments: () => [],
+    canEdit: true,
+    canManageAttachments: false,
+    isUploading: false,
+    error: null,
+    layout: 'drawer',
+    placeholder: '',
+  },
+);
+
+const emit = defineEmits<{
+  updateDescription: [value: string];
+  'update:description': [value: string];
+  blur: [];
+  uploadFiles: [files: File[]];
+  deleteAttachment: [attachmentId: string];
+}>();
+
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const isDragging = ref(false);
+const localDesc = ref(props.description);
+
+const textareaId = computed(() => (props.taskId ? `task-desc-${props.taskId}` : 'new-task-desc'));
+
+function autoResize() {
+  const el = textareaRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+watch(
+  () => [props.taskId, props.description] as const,
+  ([id, desc], prev) => {
+    const isNewTask = !prev || prev[0] !== id;
+    if (isNewTask || document.activeElement !== textareaRef.value) {
+      localDesc.value = desc || '';
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  localDesc,
+  () => {
+    nextTick(autoResize);
+  },
+  { flush: 'post' },
+);
+
+onMounted(() => {
+  autoResize();
+});
+
+function handleInput() {
+  autoResize();
+  emit('updateDescription', localDesc.value);
+  emit('update:description', localDesc.value);
+}
+
+function handleBlur() {
+  emit('updateDescription', localDesc.value);
+  emit('update:description', localDesc.value);
+  emit('blur');
+}
+
+function triggerFilePicker() {
+  fileInputRef.value?.click();
+}
+
+function emitFiles(fileList: FileList | null | undefined) {
+  if (!fileList || fileList.length === 0 || !props.canManageAttachments) return;
+  emit('uploadFiles', Array.from(fileList));
+}
+
+function handleFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  emitFiles(input.files);
+  input.value = '';
+}
+
+function handleDrop(event: DragEvent) {
+  isDragging.value = false;
+  emitFiles(event.dataTransfer?.files);
+}
+
+function handlePaste(event: ClipboardEvent) {
+  const files = event.clipboardData?.files;
+  if (files && files.length > 0 && props.canManageAttachments) {
+    event.preventDefault();
+    emitFiles(files);
+  }
+}
+</script>
+
+<template>
+  <section
+    :class="layout === 'stacked' ? 'space-y-1' : 'space-y-2.5'"
+    aria-label="Task description and attachments dropzone"
+    @dragover.prevent="canManageAttachments && (isDragging = true)"
+    @dragleave.self="isDragging = false"
+    @drop.prevent="handleDrop"
+  >
+    <div class="flex items-center justify-between gap-2">
+      <label
+        :for="textareaId"
+        :class="
+          layout === 'stacked'
+            ? 'block font-semibold text-gray-700 mb-1'
+            : 'text-xs font-bold text-gray-700 uppercase tracking-wide'
+        "
+      >
+        Description
+      </label>
+
+      <div v-if="canManageAttachments" class="flex items-center gap-2">
+        <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange">
+        <button
+          type="button"
+          @click="triggerFilePicker"
+          :disabled="isUploading"
+          class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-gray-600 hover:text-modern-primary hover:bg-gray-100 border border-gray-200 transition-colors disabled:opacity-50"
+          title="Attach files to task description"
+        >
+          <Loader2 v-if="isUploading" class="w-3 h-3 animate-spin" />
+          <Paperclip v-else class="w-3 h-3" />
+          <span>{{ isUploading ? 'Uploading...' : 'Attach file' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <div
+      :class="[
+        'rounded-lg transition-all',
+        isDragging ? 'ring-2 ring-indigo-400 bg-indigo-50/40 p-1 -m-1' : '',
+      ]"
+    >
+      <textarea
+        :id="textareaId"
+        ref="textareaRef"
+        v-model="localDesc"
+        :readonly="!canEdit"
+        @input="handleInput"
+        @blur="handleBlur"
+        @paste="handlePaste"
+        rows="3"
+        :placeholder="
+          placeholder ||
+          (layout === 'stacked'
+            ? 'Add context, specifications, or links...'
+            : 'Add more details, links, or drop/paste files here...')
+        "
+        :class="[
+          'w-full text-xs rounded-lg transition-colors outline-none resize-none min-h-[76px] max-h-60',
+          layout === 'stacked'
+            ? 'px-3 py-2 border border-gray-300 focus:outline-none focus:border-modern-primary bg-white'
+            : 'text-gray-800 bg-gray-50 hover:bg-gray-100/60 focus:bg-white border border-gray-200 focus:border-modern-primary focus:ring-1 focus:ring-modern-primary p-3',
+        ]"
+      />
+    </div>
+
+    <div
+      v-if="error"
+      class="flex items-start gap-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs"
+    >
+      <AlertCircle class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+      <span>{{ error }}</span>
+    </div>
+
+    <TaskAttachmentList
+      v-if="attachments && attachments.length > 0"
+      :attachments="attachments"
+      :can-delete="canManageAttachments"
+      @remove="emit('deleteAttachment', $event)"
+    />
+  </section>
+</template>
