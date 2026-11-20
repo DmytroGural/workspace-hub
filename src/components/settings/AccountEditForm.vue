@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Check, X } from 'lucide-vue-next';
-import { ref, watch } from 'vue';
+import { Check, Eye, EyeOff, X } from 'lucide-vue-next';
+import { ref } from 'vue';
 import { ACCOUNT_COLORS } from '@/stores/accounts';
 import type { ProviderDescriptor } from '@/types/api';
 import type { ProviderAccount } from '@/types/domain';
@@ -16,27 +16,23 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-const editLabel = ref('');
-const editColor = ref(ACCOUNT_COLORS[0]);
-const editCredentials = ref<Record<string, string>>({});
+const initialCreds: Record<string, string> = {};
+for (const field of props.descriptor?.credentialFields || []) {
+  initialCreds[field.key] = props.account.credentials[field.key] || '';
+}
 
-watch(
-  () => [props.account, props.descriptor] as const,
-  ([acc, desc]) => {
-    editLabel.value = acc.label;
-    editColor.value = acc.color;
-    const nextCreds: Record<string, string> = {};
-    for (const field of desc?.credentialFields || []) {
-      nextCreds[field.key] = acc.credentials[field.key] || '';
-    }
-    editCredentials.value = nextCreds;
-  },
-  { immediate: true },
-);
+const editLabel = ref(props.account.label);
+const editColor = ref(props.account.color || ACCOUNT_COLORS[0]);
+const editCredentials = ref<Record<string, string>>(initialCreds);
+const revealedFields = ref<Record<string, boolean>>({});
+
+function toggleReveal(key: string) {
+  revealedFields.value[key] = !revealedFields.value[key];
+}
 
 function handleSubmit() {
   emit('save', {
-    label: editLabel.value,
+    label: editLabel.value.trim() || props.account.label,
     color: editColor.value,
     credentials: { ...editCredentials.value },
   });
@@ -57,6 +53,10 @@ function handleSubmit() {
           :id="`edit-label-${account.id}`"
           v-model="editLabel"
           type="text"
+          autocomplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          @keydown.enter.prevent="handleSubmit"
           class="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:border-modern-primary"
         >
       </div>
@@ -87,12 +87,36 @@ function handleSubmit() {
         >
           {{ field.label }}
         </label>
-        <input
-          :id="`edit-cred-${account.id}-${field.key}`"
-          v-model="editCredentials[field.key]"
-          :type="field.type"
-          class="w-full px-3 py-1.5 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:border-modern-primary"
-        >
+        <div class="relative">
+          <input
+            :id="`edit-cred-${account.id}-${field.key}`"
+            v-model="editCredentials[field.key]"
+            type="text"
+            autocomplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            @keydown.enter.prevent="handleSubmit"
+            :style="
+              field.type === 'password' && !revealedFields[field.key]
+                ? ({ WebkitTextSecurity: 'disc' } as Record<string, string>)
+                : undefined
+            "
+            :class="[
+              'w-full px-3 py-1.5 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:border-modern-primary',
+              field.type === 'password' ? 'pr-8' : '',
+            ]"
+          >
+          <button
+            v-if="field.type === 'password'"
+            type="button"
+            :aria-label="`Toggle ${field.label} visibility`"
+            @click="toggleReveal(field.key)"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <EyeOff v-if="revealedFields[field.key]" class="w-3.5 h-3.5" />
+            <Eye v-else class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
 

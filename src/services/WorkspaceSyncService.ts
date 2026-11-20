@@ -1,3 +1,4 @@
+import { compact, filter, map, uniq } from 'lodash-es';
 import { connectorRegistry } from '@/connectors';
 import type { SyncProgressCallback, WorkspaceSyncResult } from '@/types/api';
 import type { BoardList, ProviderAccount, TaskBoard, TaskInterface } from '@/types/domain';
@@ -8,11 +9,7 @@ function appendUniqueAccountId(
   entity: { accountId: string; accountIds?: string[] },
   accountId: string,
 ): void {
-  const accIds = entity.accountIds || [entity.accountId];
-  if (!accIds.includes(accountId)) {
-    accIds.push(accountId);
-  }
-  entity.accountIds = accIds;
+  entity.accountIds = uniq([...(entity.accountIds || [entity.accountId]), accountId]);
 }
 
 function mergeAccountEntity<T extends { id: string; accountId: string; accountIds?: string[] }>(
@@ -35,14 +32,34 @@ export class WorkspaceSyncService {
     accounts: ProviderAccount[],
     onProgress?: SyncProgressCallback,
   ): Promise<WorkspaceSyncResult> {
-    const enabled = accounts.filter((a) => a.enabled);
     const boardsMap = new Map<string, TaskBoard>();
     const listsMap = new Map<string, BoardList>();
     const tasksMap = new Map<string, TaskInterface>();
     const errors: string[] = [];
     const syncedBoardIds = new Set<string>();
 
-    for (const acc of enabled) {
+    const disabledWorkspaceNames = new Set<string>();
+    const enabledWorkspaceNames = new Set<string>();
+    for (const acc of accounts) {
+      const names = compact(
+        map([acc.workspaceName, acc.label], (s) => (s || '').trim().toLowerCase()),
+      );
+      for (const n of names) {
+        if (acc.enabled) {
+          enabledWorkspaceNames.add(n);
+        } else {
+          disabledWorkspaceNames.add(n);
+        }
+      }
+    }
+
+    for (const acc of accounts) {
+      if (!acc.enabled) {
+        acc.status = 'idle';
+        acc.error = null;
+        continue;
+      }
+
       acc.status = 'syncing';
       acc.error = null;
 
@@ -58,29 +75,57 @@ export class WorkspaceSyncService {
           }
         }, syncedBoardIds);
 
-        for (const incomingBoard of payload.boards) {
+        if (!acc.enabled) {
+          acc.status = 'idle';
+          continue;
+        }
+
+        const allowedBoards = filter(payload.boards, (b) => {
+          const wsName = (b.workspaceName || '').trim().toLowerCase();
+          const wsId = (b.workspaceId || '').trim().toLowerCase();
+          if (
+            (wsName && disabledWorkspaceNames.has(wsName) && !enabledWorkspaceNames.has(wsName)) ||
+            (wsId && disabledWorkspaceNames.has(wsId) && !enabledWorkspaceNames.has(wsId))
+          ) {
+            return false;
+          }
+          return true;
+        });
+
+        const allowedBoardIds = new Set(map(allowedBoards, 'id'));
+        if (allowedBoards.length > 0 && !acc.workspaceName) {
+          const uniqueWs = uniq(compact(map(allowedBoards, 'workspaceName')));
+          if (uniqueWs.length === 1) {
+            acc.workspaceName = uniqueWs[0];
+          }
+        }
+
+        for (const incomingBoard of allowedBoards) {
           if (mergeAccountEntity(boardsMap, incomingBoard, acc.id)) {
             syncedBoardIds.add(incomingBoard.id);
           }
         }
 
         for (const incomingList of payload.lists) {
-          mergeAccountEntity(listsMap, incomingList, acc.id);
+          if (allowedBoardIds.has(incomingList.idBoard)) {
+            mergeAccountEntity(listsMap, incomingList, acc.id);
+          }
         }
 
         for (const incomingTask of payload.tasks) {
-          mergeAccountEntity(tasksMap, incomingTask, acc.id);
+          if (allowedBoardIds.has(incomingTask.idBoard)) {
+            mergeAccountEntity(tasksMap, incomingTask, acc.id);
+          }
         }
 
         // Link this account ID to any lists/tasks of boards shared with a previously synced account
-        const accountBoardIds = new Set(payload.boards.map((b) => b.id));
         for (const list of listsMap.values()) {
-          if (accountBoardIds.has(list.idBoard)) {
+          if (allowedBoardIds.has(list.idBoard)) {
             appendUniqueAccountId(list, acc.id);
           }
         }
         for (const task of tasksMap.values()) {
-          if (accountBoardIds.has(task.idBoard)) {
+          if (allowedBoardIds.has(task.idBoard)) {
             appendUniqueAccountId(task, acc.id);
           }
         }
@@ -110,9 +155,17 @@ export class WorkspaceSyncService {
     board: TaskBoard,
     account: ProviderAccount,
   ): Promise<{ lists: BoardList[]; tasks: TaskInterface[] }> {
+    if (!account.enabled) {
+      account.status = 'idle';
+      return { lists: [], tasks: [] };
+    }
     const connector = connectorRegistry.getConnector(account);
     const boardLists = await connector.getListsForBoard(board.id);
     const boardTasks = await connector.getCardsForBoard(board, boardLists);
+    if (!account.enabled) {
+      account.status = 'idle';
+      return { lists: [], tasks: [] };
+    }
     account.status = 'connected';
     account.error = null;
     account.lastSyncedAt = nowIso();

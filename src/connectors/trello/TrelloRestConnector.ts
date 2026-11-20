@@ -47,7 +47,6 @@ const HEX_64_SECRET_RE = /^[0-9a-f]{64}$/i;
 export class TrelloRestConnector extends BaseTaskProviderConnector {
   private readonly http: IHttpClient;
   private readonly apiToken: string;
-  private readonly credentials?: Record<string, string>;
 
   constructor(
     apiKey: string,
@@ -59,11 +58,9 @@ export class TrelloRestConnector extends BaseTaskProviderConnector {
       accountColor: '#4573d2',
     },
     httpClient?: IHttpClient,
-    credentials?: Record<string, string>,
   ) {
     super(meta);
     this.apiToken = token.trim();
-    this.credentials = credentials;
     this.http =
       httpClient ||
       new FetchHttpClient(TRELLO_BASE_URL, {
@@ -103,19 +100,17 @@ export class TrelloRestConnector extends BaseTaskProviderConnector {
       },
     });
 
-    const targetWorkspace = (this.credentials?.workspace || this.meta.accountLabel || '')
-      .trim()
-      .toLowerCase();
+    const candidates = [this.meta.workspaceName, this.meta.accountLabel]
+      .map((s) => (s || '').trim().toLowerCase())
+      .filter(Boolean);
 
     const matchesWorkspace = (b: TrelloRawBoard): boolean => {
-      if (!targetWorkspace) return false;
+      if (candidates.length === 0) return false;
       const org = b.organization;
       const orgName = (org?.name || '').trim().toLowerCase();
       const orgDisplay = (org?.displayName || '').trim().toLowerCase();
       const orgId = (org?.id || b.idOrganization || '').trim().toLowerCase();
-      return (
-        targetWorkspace === orgName || targetWorkspace === orgDisplay || targetWorkspace === orgId
-      );
+      return candidates.some((c) => c === orgName || c === orgDisplay || c === orgId);
     };
 
     const hasMatchingOrg = rawBoards.some(matchesWorkspace);

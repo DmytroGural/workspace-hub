@@ -65,6 +65,10 @@ export class AccountService {
     return connector.testConnection();
   }
 
+  invalidateConnector(accountId: string): void {
+    connectorRegistry.invalidate(accountId);
+  }
+
   persist(accounts: ProviderAccount[]): void {
     storageService.saveLiveAccounts(accounts);
   }

@@ -1,3 +1,16 @@
+import {
+  filter,
+  find,
+  flatMap,
+  intersection,
+  keyBy,
+  map,
+  reject,
+  some,
+  sortBy,
+  uniq,
+  uniqBy,
+} from 'lodash-es';
 import { defineStore } from 'pinia';
 import { computed, type Ref, ref, watch } from 'vue';
 import { taskService } from '@/services/TaskService';
@@ -28,30 +41,23 @@ export const DEFAULT_FALLBACK_USER: WorkspaceMember = {
 export function deduplicateEntity<
   T extends { id: string; accountId: string; accountIds?: string[] },
 >(incoming: T[]): T[] {
-  const map = new Map<string, T>();
+  const entityMap = new Map<string, T>();
   for (const item of incoming) {
-    const existing = map.get(item.id);
+    const existing = entityMap.get(item.id);
     if (!existing) {
-      map.set(item.id, {
+      entityMap.set(item.id, {
         ...item,
-        accountIds: item.accountIds ? [...item.accountIds] : [item.accountId],
+        accountIds: uniq(item.accountIds ? [...item.accountIds, item.accountId] : [item.accountId]),
       });
     } else {
-      const accIds = existing.accountIds || [existing.accountId];
-      if (!accIds.includes(item.accountId)) {
-        accIds.push(item.accountId);
-      }
-      if (item.accountIds) {
-        for (const id of item.accountIds) {
-          if (!accIds.includes(id)) {
-            accIds.push(id);
-          }
-        }
-      }
-      existing.accountIds = accIds;
+      existing.accountIds = uniq([
+        ...(existing.accountIds || [existing.accountId]),
+        item.accountId,
+        ...(item.accountIds || []),
+      ]);
     }
   }
-  return Array.from(map.values());
+  return Array.from(entityMap.values());
 }
 
 export const deduplicateBoards = (incoming: TaskBoard[]): TaskBoard[] =>
@@ -101,50 +107,53 @@ export const useTasksStore = defineStore('tasks', () => {
   // Getters
   const selectedTask = computed(() => {
     if (!selectedTaskId.value) return null;
-    return tasks.value.find((t) => t.id === selectedTaskId.value) || null;
+    return find(tasks.value, { id: selectedTaskId.value }) || null;
   });
 
-  const availableLabels = computed(() => {
-    const map = new Map<string, { name: string; color: string }>();
-    tasks.value.forEach((t) => {
-      t.labels.forEach((l) => {
-        const displayName = getLabelDisplayName(l);
-        if (!map.has(displayName)) {
-          map.set(displayName, { name: displayName, color: l.color });
-        }
-      });
-    });
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  });
+  const availableLabels = computed(() =>
+    sortBy(
+      uniqBy(
+        flatMap(tasks.value, (t) =>
+          map(t.labels, (l) => ({ name: getLabelDisplayName(l), color: l.color })),
+        ),
+        'name',
+      ),
+      (l) => l.name.toLowerCase(),
+    ),
+  );
 
   // Internal domain helpers
   function findTask(taskId: string): TaskInterface | undefined {
-    return tasks.value.find((t) => t.id === taskId);
+    return find(tasks.value, { id: taskId });
   }
 
   function findBoard(boardId: string): TaskBoard | undefined {
-    return boards.value.find((b) => b.id === boardId);
+    return find(boards.value, { id: boardId });
   }
 
   function resolveAccountForBoard(board?: TaskBoard): ProviderAccount | undefined {
     if (!board) {
-      return accountsStore.accounts.find((a) => a.enabled) || accountsStore.accounts[0];
+      return find(accountsStore.accounts, 'enabled') || accountsStore.accounts[0];
     }
     let acc = accountsStore.findAccount(board.accountId);
     if (!acc?.enabled && board.accountIds) {
-      acc = accountsStore.accounts.find((a) => a.enabled && board.accountIds?.includes(a.id));
+      acc = find(
+        accountsStore.accounts,
+        (a) => a.enabled && Boolean(board.accountIds?.includes(a.id)),
+      );
     }
     return (
-      acc ||
-      accountsStore.findAccount(board.accountId) ||
-      accountsStore.accounts.find((a) => a.enabled)
+      acc || accountsStore.findAccount(board.accountId) || find(accountsStore.accounts, 'enabled')
     );
   }
 
   function resolveAccountForTask(task: TaskInterface): ProviderAccount | undefined {
     let acc = accountsStore.findAccount(task.accountId);
     if (!acc?.enabled && task.accountIds) {
-      acc = accountsStore.accounts.find((a) => a.enabled && task.accountIds?.includes(a.id));
+      acc = find(
+        accountsStore.accounts,
+        (a) => a.enabled && Boolean(task.accountIds?.includes(a.id)),
+      );
     }
     return acc || accountsStore.findAccount(task.accountId);
   }
@@ -155,7 +164,7 @@ export const useTasksStore = defineStore('tasks', () => {
 
   function appendBoardLabel(boardId: string, label: TaskLabel) {
     const current = boardLabelsMap.value[boardId] || [];
-    if (!current.some((l) => l.id === label.id)) {
+    if (!some(current, { id: label.id })) {
       boardLabelsMap.value = {
         ...boardLabelsMap.value,
         [boardId]: [...current, label],
@@ -164,7 +173,7 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   function removeTaskFromWorkspace(taskId: string) {
-    tasks.value = tasks.value.filter((t) => t.id !== taskId);
+    tasks.value = reject(tasks.value, { id: taskId });
     if (selectedTaskId.value === taskId) {
       selectedTaskId.value = null;
     }
@@ -173,7 +182,7 @@ export const useTasksStore = defineStore('tasks', () => {
   // Task Actions
   async function createTask(input: CreateTaskInput) {
     const targetBoard = findBoard(input.idBoard);
-    const targetList = lists.value.find((l) => l.id === input.idList);
+    const targetList = find(lists.value, { id: input.idList });
     const targetAccount = resolveAccountForBoard(targetBoard);
 
     try {
@@ -261,10 +270,7 @@ export const useTasksStore = defineStore('tasks', () => {
       if (!result) return;
 
       if (result.updatedLists) {
-        setLists([
-          ...lists.value.filter((l) => l.idBoard !== task.idBoard),
-          ...result.updatedLists,
-        ]);
+        setLists([...reject(lists.value, { idBoard: task.idBoard }), ...result.updatedLists]);
       }
 
       const currentTask = findTask(taskId);
@@ -470,6 +476,75 @@ export const useTasksStore = defineStore('tasks', () => {
     tasks.value = deduplicateTasks(incoming);
   }
 
+  function syncEntitiesWithAccounts(
+    accounts: ProviderAccount[],
+    source?: { boards: TaskBoard[]; lists: BoardList[]; tasks: TaskInterface[] },
+  ) {
+    const accountById = keyBy(accounts, 'id');
+    const enabledIds = map(filter(accounts, 'enabled'), 'id');
+
+    const sourceBoards = source?.boards ?? boards.value;
+    const sourceLists = source?.lists ?? lists.value;
+    const sourceTasks = source?.tasks ?? tasks.value;
+
+    setBoards(
+      filter(
+        map(sourceBoards, (board) => {
+          const activeAccIds = intersection(board.accountIds || [board.accountId], enabledIds);
+          const primaryId = enabledIds.includes(board.accountId)
+            ? board.accountId
+            : activeAccIds[0] || board.accountId;
+          const owner = accountById[primaryId];
+          return {
+            ...board,
+            accountId: primaryId,
+            accountIds: activeAccIds,
+            accountLabel: owner?.label || board.accountLabel,
+            accountColor: owner?.color || board.accountColor,
+          };
+        }),
+        (b) => b.accountIds.length > 0,
+      ),
+    );
+
+    setLists(
+      filter(
+        map(sourceLists, (list) => {
+          const activeAccIds = intersection(list.accountIds || [list.accountId], enabledIds);
+          const primaryId = enabledIds.includes(list.accountId)
+            ? list.accountId
+            : activeAccIds[0] || list.accountId;
+          return {
+            ...list,
+            accountId: primaryId,
+            accountIds: activeAccIds,
+          };
+        }),
+        (l) => l.accountIds.length > 0,
+      ),
+    );
+
+    setTasks(
+      filter(
+        map(sourceTasks, (task) => {
+          const activeAccIds = intersection(task.accountIds || [task.accountId], enabledIds);
+          const primaryId = enabledIds.includes(task.accountId)
+            ? task.accountId
+            : activeAccIds[0] || task.accountId;
+          const owner = accountById[primaryId];
+          return {
+            ...task,
+            accountId: primaryId,
+            accountIds: activeAccIds,
+            accountLabel: owner?.label || task.accountLabel,
+            accountColor: owner?.color || task.accountColor,
+          };
+        }),
+        (t) => t.accountIds.length > 0,
+      ),
+    );
+  }
+
   function clearTasksState() {
     boards.value = [];
     lists.value = [];
@@ -486,6 +561,7 @@ export const useTasksStore = defineStore('tasks', () => {
     setBoards,
     setLists,
     setTasks,
+    syncEntitiesWithAccounts,
     selectedTaskId,
     selectedTask,
     availableLabels,

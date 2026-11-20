@@ -1,3 +1,4 @@
+import { filter } from 'lodash-es';
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 import { storageService } from '@/services/StorageService';
@@ -24,7 +25,10 @@ export const useFiltersStore = defineStore('filters', () => {
   const visibleBoards = computed(() => {
     const accId = selectedAccountId.value;
     if (!accId) return tasksStore.boards;
-    return tasksStore.boards.filter((b) => b.accountId === accId || b.accountIds?.includes(accId));
+    return filter(
+      tasksStore.boards,
+      (b) => b.accountId === accId || Boolean(b.accountIds?.includes(accId)),
+    );
   });
 
   const filteredTasks = computed(() =>

@@ -1,6 +1,6 @@
+import { filter, find, intersection, map, reject } from 'lodash-es';
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
-import { accountService } from '@/services/AccountService';
 import { workspaceSyncService } from '@/services/WorkspaceSyncService';
 import type { ProviderAccount, TaskBoard } from '@/types/domain';
 import { nowMillis } from '@/utils/dateUtils';
@@ -31,9 +31,9 @@ function resolveAccountForBoard(
   board: TaskBoard,
   accounts: ProviderAccount[],
 ): ProviderAccount | undefined {
-  let account = accounts.find((a) => a.id === board.accountId);
+  let account = find(accounts, { id: board.accountId });
   if (!account?.enabled && board.accountIds) {
-    account = accounts.find((a) => a.enabled && board.accountIds?.includes(a.id));
+    account = find(accounts, (a) => a.enabled && Boolean(board.accountIds?.includes(a.id)));
   }
   return account?.enabled ? account : undefined;
 }
@@ -52,6 +52,7 @@ export const useSyncStore = defineStore('sync', () => {
   let activeSyncCount = 0;
   let lastFullSyncAt = 0;
   let inFlightFullSync: Promise<void> | null = null;
+  let pendingResync = false;
   const inFlightBoardSyncs = new Map<string, Promise<void>>();
   let hasBootstrapped = false;
 
@@ -79,11 +80,19 @@ export const useSyncStore = defineStore('sync', () => {
 
   /**
    * Syncs all enabled accounts across the workspace.
-   * If a full sync is already in flight, returns the existing promise.
+   * If a full sync is already in flight, returns the existing promise (or queues a resync when force=true).
    */
-  async function syncAllAccounts(): Promise<void> {
+  async function syncAllAccounts(force = false): Promise<void> {
     if (inFlightFullSync) {
-      return inFlightFullSync;
+      if (force) {
+        pendingResync = true;
+      }
+      await inFlightFullSync;
+      if (pendingResync) {
+        pendingResync = false;
+        return syncAllAccounts();
+      }
+      return;
     }
 
     if (accountsStore.accounts.length === 0) {
@@ -105,12 +114,10 @@ export const useSyncStore = defineStore('sync', () => {
           },
         );
 
-        tasksStore.setBoards(result.boards);
-        tasksStore.setLists(result.lists);
-        tasksStore.setTasks(result.tasks);
+        tasksStore.syncEntitiesWithAccounts(accountsStore.accounts, result);
 
         const firstMember =
-          accountsStore.accounts.find((a) => a.enabled && a.member)?.member || null;
+          find(accountsStore.accounts, (a) => a.enabled && Boolean(a.member))?.member || null;
         accountsStore.currentUser = firstMember;
 
         if (result.errors.length > 0) {
@@ -118,12 +125,15 @@ export const useSyncStore = defineStore('sync', () => {
         }
         lastFullSyncAt = nowMillis();
       } finally {
-        accountService.persist(accountsStore.accounts);
         inFlightFullSync = null;
       }
     });
 
-    return inFlightFullSync;
+    await inFlightFullSync;
+    if (pendingResync) {
+      pendingResync = false;
+      return syncAllAccounts();
+    }
   }
 
   /**
@@ -144,10 +154,10 @@ export const useSyncStore = defineStore('sync', () => {
 
     const run = withSyncScope(async () => {
       try {
-        let board = tasksStore.boards.find((b) => b.id === boardId);
+        let board = find(tasksStore.boards, { id: boardId });
         if (!board) {
           await syncAllAccounts();
-          board = tasksStore.boards.find((b) => b.id === boardId);
+          board = find(tasksStore.boards, { id: boardId });
           if (!board) return;
         }
 
@@ -159,27 +169,30 @@ export const useSyncStore = defineStore('sync', () => {
           targetBoard,
           account,
         );
+        if (!account.enabled) return;
 
-        const syncedAccountIds = targetBoard.accountIds || [account.id];
+        const enabledIds = map(filter(accountsStore.accounts, 'enabled'), 'id');
+        const syncedAccountIds = intersection(targetBoard.accountIds || [account.id], enabledIds);
+
         for (const l of freshLists) {
           l.accountIds = [...syncedAccountIds];
         }
         for (const t of freshTasks) {
           t.accountIds = [...syncedAccountIds];
+          t.accountLabel = account.label;
+          t.accountColor = account.color;
         }
 
         tasksStore.setLists([
-          ...tasksStore.lists.filter((l) => l.idBoard !== targetBoard.id),
+          ...reject(tasksStore.lists, { idBoard: targetBoard.id }),
           ...freshLists,
         ]);
         tasksStore.setTasks([
-          ...tasksStore.tasks.filter((t) => t.idBoard !== targetBoard.id),
+          ...reject(tasksStore.tasks, { idBoard: targetBoard.id }),
           ...freshTasks,
         ]);
-
-        accountService.persist(accountsStore.accounts);
       } catch (err: unknown) {
-        const boardName = tasksStore.boards.find((b) => b.id === boardId)?.name || boardId;
+        const boardName = find(tasksStore.boards, { id: boardId })?.name || boardId;
         const msg = getErrorMessage(err, 'Board sync failed');
         errorMessage.value = `Failed to refresh "${boardName}": ${msg}`;
       } finally {

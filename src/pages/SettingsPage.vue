@@ -19,7 +19,6 @@ const providersStore = useProvidersStore();
 const { accounts, hasAccounts } = storeToRefs(accountsStore);
 const { isLoading, errorMessage } = storeToRefs(syncStore);
 
-const { updateAccount, toggleAccountEnabled, removeAccount } = accountsStore;
 const { refreshTasks } = syncStore;
 const { openSettingsModal } = uiStore;
 const { getProviderDescriptor } = providersStore;
@@ -49,7 +48,7 @@ async function saveEdit(
   isSavingEdit.value = true;
   editError.value = null;
   try {
-    await updateAccount(accountId, payload);
+    await accountsStore.updateAccount(accountId, payload);
     editingId.value = null;
   } catch (err: unknown) {
     editError.value = getErrorMessage(err, 'Failed to update account');
@@ -98,11 +97,11 @@ async function saveEdit(
           :descriptor="getProviderDescriptor(acc.provider)"
           :is-editing="editingId === acc.id"
           :is-saving="isSavingEdit"
-          @toggle-enabled="toggleAccountEnabled(acc.id)"
+          @toggle-enabled="accountsStore.toggleAccountEnabled(acc.id)"
           @start-edit="startEdit(acc.id)"
           @cancel-edit="cancelEdit"
           @save-edit="saveEdit(acc.id, $event)"
-          @remove="removeAccount(acc.id)"
+          @remove="accountsStore.removeAccount(acc.id)"
         />
       </div>
     </div>

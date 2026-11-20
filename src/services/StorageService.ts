@@ -1,11 +1,20 @@
 import type { ProviderAccount } from '@/types/domain';
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   ACCOUNTS: 'workspace_hub_accounts',
+  ACCOUNT_SETTINGS: 'workspace_hub_account_settings',
   PAGE_SIZE: 'workspace_hub_page_size',
   ONLY_ASSIGNED_TO_ME: 'workspace_hub_only_assigned_to_me',
   DRAWER_WIDTH: 'workspace_hub_drawer_width',
 } as const;
+
+interface StoredAccountUserSettings {
+  label: string;
+  workspaceName?: string;
+  color: string;
+  enabled: boolean;
+  credentials: Record<string, string>;
+}
 
 function normalizeStoredAccount(raw: Partial<ProviderAccount>): ProviderAccount | null {
   if (!raw || typeof raw !== 'object' || !raw.id || !raw.provider) {
@@ -16,8 +25,8 @@ function normalizeStoredAccount(raw: Partial<ProviderAccount>): ProviderAccount 
     id: String(raw.id),
     provider: raw.provider,
     label: String(raw.label || raw.id),
-    credentials:
-      typeof raw.credentials === 'object' && raw.credentials !== null ? { ...raw.credentials } : {},
+    workspaceName: raw.workspaceName ? String(raw.workspaceName) : undefined,
+    credentials: typeof raw.credentials === 'object' && raw.credentials !== null ? { ...raw.credentials } : {},
     color: raw.color || '#4573d2',
     enabled: raw.enabled ?? true,
     status: raw.status || 'idle',
@@ -28,6 +37,17 @@ function normalizeStoredAccount(raw: Partial<ProviderAccount>): ProviderAccount 
 }
 
 export class StorageService {
+  private loadAccountUserSettingsMap(): Record<string, StoredAccountUserSettings> {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.ACCOUNT_SETTINGS);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
   loadSavedLiveAccounts(): ProviderAccount[] | null {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
@@ -35,10 +55,22 @@ export class StorageService {
 
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        const settingsMap = this.loadAccountUserSettingsMap();
         const accounts: ProviderAccount[] = [];
         for (const item of parsed) {
           const normalized = normalizeStoredAccount(item);
           if (normalized) {
+            const override = settingsMap[normalized.id];
+            if (override) {
+              normalized.label = override.label || normalized.label;
+              normalized.workspaceName = override.workspaceName || normalized.workspaceName;
+              normalized.color = override.color || normalized.color;
+              normalized.enabled = override.enabled ?? normalized.enabled;
+
+              if (override.credentials && typeof override.credentials === 'object') {
+                normalized.credentials = { ...override.credentials };
+              }
+            }
             accounts.push(normalized);
           }
         }
@@ -53,6 +85,17 @@ export class StorageService {
   saveLiveAccounts(accounts: ProviderAccount[]): void {
     try {
       if (accounts.length > 0) {
+        const settingsMap: Record<string, StoredAccountUserSettings> = {};
+        for (const acc of accounts) {
+          settingsMap[acc.id] = {
+            label: acc.label,
+            workspaceName: acc.workspaceName,
+            color: acc.color,
+            enabled: acc.enabled,
+            credentials: { ...acc.credentials },
+          };
+        }
+        localStorage.setItem(STORAGE_KEYS.ACCOUNT_SETTINGS, JSON.stringify(settingsMap));
         localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
       } else {
         this.clearAllAccounts();
@@ -65,6 +108,7 @@ export class StorageService {
   clearAllAccounts(): void {
     try {
       localStorage.removeItem(STORAGE_KEYS.ACCOUNTS);
+      localStorage.removeItem(STORAGE_KEYS.ACCOUNT_SETTINGS);
       localStorage.removeItem('workspace_hub_vault_seed');
     } catch {
       // Ignore storage errors

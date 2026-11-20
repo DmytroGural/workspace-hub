@@ -49,7 +49,13 @@ function maskSecret(val?: string): string {
               {{ descriptor?.name || account.provider }}
             </span>
             <span
-              v-if="account.status === 'connected'"
+              v-if="!account.enabled"
+              class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500"
+            >
+              Disabled
+            </span>
+            <span
+              v-else-if="account.status === 'connected'"
               class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700"
             >
               <CheckCircle2 class="w-3 h-3" />

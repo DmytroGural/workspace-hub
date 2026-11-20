@@ -1,3 +1,4 @@
+import { compact, filter, find, map, reject, some, uniq } from 'lodash-es';
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { ACCOUNT_COLORS, accountService } from '@/services/AccountService';
@@ -13,36 +14,37 @@ export { ACCOUNT_COLORS };
 export const useAccountsStore = defineStore('accounts', () => {
   const accounts = ref<ProviderAccount[]>(accountService.getInitialAccounts());
   const currentUser = ref<WorkspaceMember | null>(
-    accounts.value.find((a) => a.enabled && a.member)?.member || null,
+    find(accounts.value, (a) => a.enabled && Boolean(a.member))?.member || null,
   );
 
   const hasAccounts = computed(() => accounts.value.length > 0);
   const liveAccounts = computed(() => accounts.value);
-  const enabledAccounts = computed(() => accounts.value.filter((a) => a.enabled));
+  const enabledAccounts = computed(() => filter(accounts.value, 'enabled'));
   const isLiveConnected = computed(() =>
-    accounts.value.some((a) => a.enabled && a.status === 'connected'),
+    some(accounts.value, { enabled: true, status: 'connected' }),
   );
 
-  const myMemberIds = computed(() => {
-    const ids = new Set<string>();
-    if (currentUser.value?.id) ids.add(currentUser.value.id);
-    accounts.value.forEach((a) => {
-      if (a.enabled && a.member?.id) ids.add(a.member.id);
-    });
-    return ids;
-  });
+  const myMemberIds = computed(
+    () =>
+      new Set(
+        uniq(compact([currentUser.value?.id, ...map(enabledAccounts.value, (a) => a.member?.id)])),
+      ),
+  );
 
-  const myUsernames = computed(() => {
-    const names = new Set<string>();
-    if (currentUser.value?.username) names.add(currentUser.value.username);
-    accounts.value.forEach((a) => {
-      if (a.enabled && a.member?.username) names.add(a.member.username);
-    });
-    return names;
-  });
+  const myUsernames = computed(
+    () =>
+      new Set(
+        uniq(
+          compact([
+            currentUser.value?.username,
+            ...map(enabledAccounts.value, (a) => a.member?.username),
+          ]),
+        ),
+      ),
+  );
 
   function findAccount(accountId: string): ProviderAccount | undefined {
-    return accounts.value.find((a) => a.id === accountId);
+    return find(accounts.value, { id: accountId });
   }
 
   async function addAccount(input: AddAccountInput): Promise<ProviderAccount> {
@@ -74,12 +76,13 @@ export const useAccountsStore = defineStore('accounts', () => {
     },
   ) {
     const syncStore = useSyncStore();
+    const tasksStore = useTasksStore();
     const acc = findAccount(accountId);
     if (!acc) return;
 
     let credsChanged = false;
+    const nextCreds: Record<string, string> = { ...acc.credentials };
     if (updates.credentials) {
-      const nextCreds: Record<string, string> = { ...acc.credentials };
       for (const [key, val] of Object.entries(updates.credentials)) {
         const trimmed = val.trim();
         if ((acc.credentials[key] ?? '') !== trimmed) {
@@ -87,41 +90,81 @@ export const useAccountsStore = defineStore('accounts', () => {
         }
         nextCreds[key] = trimmed;
       }
-      acc.credentials = nextCreds;
     }
 
-    if (updates.label !== undefined) acc.label = updates.label.trim() || acc.label;
-    if (updates.color !== undefined) acc.color = updates.color;
-    if (updates.enabled !== undefined) acc.enabled = updates.enabled;
+    const nextLabel = updates.label !== undefined ? updates.label.trim() || acc.label : acc.label;
+    const nextColor = updates.color !== undefined ? updates.color : acc.color;
+    const nextEnabled = updates.enabled !== undefined ? updates.enabled : acc.enabled;
+
+    if (!acc.workspaceName && acc.label !== nextLabel) {
+      acc.workspaceName = acc.label;
+    }
+
+    acc.credentials = nextCreds;
+    acc.label = nextLabel;
+    acc.color = nextColor;
+    acc.enabled = nextEnabled;
 
     if (credsChanged) {
       acc.member = await accountService.verifyAccountCredentials(acc);
+    } else {
+      accountService.invalidateConnector(accountId);
     }
 
+    accounts.value = [...accounts.value];
     accountService.persist(accounts.value);
-    await syncStore.syncAllAccounts();
+
+    for (const board of tasksStore.boards) {
+      if (board.accountId === accountId) {
+        board.accountLabel = nextLabel;
+        board.accountColor = nextColor;
+      }
+    }
+    for (const task of tasksStore.tasks) {
+      if (task.accountId === accountId) {
+        task.accountLabel = nextLabel;
+        task.accountColor = nextColor;
+      }
+    }
+
+    if (credsChanged || updates.enabled !== undefined) {
+      await syncStore.syncAllAccounts(true);
+    }
   }
 
   async function toggleAccountEnabled(accountId: string) {
     const filtersStore = useFiltersStore();
     const syncStore = useSyncStore();
+    const tasksStore = useTasksStore();
     const acc = findAccount(accountId);
     if (!acc) return;
 
-    acc.enabled = !acc.enabled;
-    if (filtersStore.selectedAccountId === accountId && !acc.enabled) {
+    const nextEnabled = !acc.enabled;
+    acc.enabled = nextEnabled;
+    acc.status = nextEnabled ? 'syncing' : 'idle';
+    acc.error = null;
+
+    accounts.value = [...accounts.value];
+    accountService.persist(accounts.value);
+
+    if (filtersStore.selectedAccountId === accountId && !nextEnabled) {
       filtersStore.selectedAccountId = null;
     }
 
-    accountService.persist(accounts.value);
-    await syncStore.syncAllAccounts();
+    if (!nextEnabled) {
+      tasksStore.syncEntitiesWithAccounts(accounts.value);
+      currentUser.value =
+        find(accounts.value, (a) => a.enabled && Boolean(a.member))?.member || null;
+    }
+
+    await syncStore.syncAllAccounts(true);
   }
 
   async function removeAccount(accountId: string) {
     const filtersStore = useFiltersStore();
     const syncStore = useSyncStore();
 
-    accounts.value = accounts.value.filter((a) => a.id !== accountId);
+    accounts.value = reject(accounts.value, { id: accountId });
     if (filtersStore.selectedAccountId === accountId) {
       filtersStore.selectedAccountId = null;
     }
@@ -132,7 +175,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     }
 
     accountService.persist(accounts.value);
-    await syncStore.syncAllAccounts();
+    await syncStore.syncAllAccounts(true);
   }
 
   async function clearAllAccounts() {

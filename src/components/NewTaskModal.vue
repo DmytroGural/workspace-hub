@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { filter, groupBy, map, reject, some } from 'lodash-es';
 import { Plus, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -23,22 +24,15 @@ const { getBoardCapabilities } = providersStore;
 const { closeNewTaskModal } = uiStore;
 
 const creatableBoards = computed(() =>
-  boards.value.filter((b) => getBoardCapabilities(b.id).canCreateTask),
+  filter(boards.value, (b) => getBoardCapabilities(b.id).canCreateTask),
 );
 
-const groupedCreatableBoards = computed(() => {
-  const groups = new Map<string, typeof boards.value>();
-  for (const b of creatableBoards.value) {
-    const label = b.accountLabel || 'Workspace';
-    const list = groups.get(label) || [];
-    list.push(b);
-    groups.set(label, list);
-  }
-  return Array.from(groups.entries()).map(([label, boards]) => ({
-    label,
-    boards,
-  }));
-});
+const groupedCreatableBoards = computed(() =>
+  map(
+    groupBy(creatableBoards.value, (b) => b.accountLabel || 'Workspace'),
+    (groupBoards, label) => ({ label, boards: groupBoards }),
+  ),
+);
 
 const titleInputRef = ref<HTMLInputElement | null>(null);
 const name = ref('');
@@ -53,9 +47,7 @@ const isSavingLabel = ref(false);
 
 const activeCapabilities = computed(() => getBoardCapabilities(idBoard.value));
 
-const availableLists = computed(() => {
-  return lists.value.filter((l) => l.idBoard === idBoard.value);
-});
+const availableLists = computed(() => filter(lists.value, { idBoard: idBoard.value }));
 
 const availableBoardLabels = computed(() => {
   return idBoard.value ? boardLabelsMap.value[idBoard.value] || [] : [];
@@ -66,12 +58,12 @@ const availableBoardMembers = computed(() => {
 });
 
 function isLabelSelected(labelId: string): boolean {
-  return selectedLabels.value.some((l) => l.id === labelId);
+  return some(selectedLabels.value, { id: labelId });
 }
 
 function toggleSelectedLabel(label: TaskLabel) {
   if (isLabelSelected(label.id)) {
-    selectedLabels.value = selectedLabels.value.filter((l) => l.id !== label.id);
+    selectedLabels.value = reject(selectedLabels.value, { id: label.id });
   } else {
     selectedLabels.value = [...selectedLabels.value, label];
   }
@@ -82,7 +74,7 @@ async function handleCreateLabel(payload: { name: string; color: string }) {
   isSavingLabel.value = true;
   try {
     const created = await createBoardLabel(idBoard.value, payload.name.trim(), payload.color);
-    if (created && !selectedLabels.value.some((l) => l.id === created.id)) {
+    if (created && !some(selectedLabels.value, { id: created.id })) {
       selectedLabels.value = [...selectedLabels.value, created];
     }
   } finally {
@@ -91,12 +83,12 @@ async function handleCreateLabel(payload: { name: string; color: string }) {
 }
 
 function isAssigneeSelected(memberId: string): boolean {
-  return selectedAssignees.value.some((m) => m.id === memberId);
+  return some(selectedAssignees.value, { id: memberId });
 }
 
 function toggleSelectedAssignee(member: WorkspaceMember) {
   if (isAssigneeSelected(member.id)) {
-    selectedAssignees.value = selectedAssignees.value.filter((m) => m.id !== member.id);
+    selectedAssignees.value = reject(selectedAssignees.value, { id: member.id });
   } else {
     selectedAssignees.value = [...selectedAssignees.value, member];
   }
@@ -120,11 +112,11 @@ watch(
   availableLists,
   (newLists) => {
     const initListId = uiStore.newTaskInitialParams?.idList;
-    if (initListId && newLists.some((l) => l.id === initListId)) {
+    if (initListId && some(newLists, { id: initListId })) {
       idList.value = initListId;
       return;
     }
-    if (newLists.length > 0 && (!idList.value || !newLists.some((l) => l.id === idList.value))) {
+    if (newLists.length > 0 && (!idList.value || !some(newLists, { id: idList.value }))) {
       idList.value = newLists[0].id;
     }
   },
@@ -142,7 +134,7 @@ watch(isNewTaskModalOpen, (isOpen) => {
     const init = uiStore.newTaskInitialParams;
     const targetBoardId = init?.idBoard || selectedBoardId.value;
 
-    if (targetBoardId && creatableBoards.value.some((b) => b.id === targetBoardId)) {
+    if (targetBoardId && some(creatableBoards.value, { id: targetBoardId })) {
       idBoard.value = targetBoardId;
     } else if (creatableBoards.value[0]) {
       idBoard.value = creatableBoards.value[0].id;

@@ -1,3 +1,4 @@
+import { filter, find, keyBy, orderBy, reject, some, without } from 'lodash-es';
 import { connectorRegistry } from '@/connectors';
 import type {
   BoardStat,
@@ -73,10 +74,10 @@ function filterRelevantTasks(
 function countSectionMetrics(relevant: TaskInterface[]) {
   return {
     total: relevant.length,
-    completed: relevant.filter((t) => t.dueComplete).length,
-    overdue: relevant.filter((t) => t.section === 'overdue' && !t.dueComplete).length,
-    today: relevant.filter((t) => t.section === 'today' && !t.dueComplete).length,
-    upcoming: relevant.filter((t) => t.section === 'upcoming' && !t.dueComplete).length,
+    completed: filter(relevant, 'dueComplete').length,
+    overdue: filter(relevant, { section: 'overdue', dueComplete: false }).length,
+    today: filter(relevant, { section: 'today', dueComplete: false }).length,
+    upcoming: filter(relevant, { section: 'upcoming', dueComplete: false }).length,
   };
 }
 
@@ -95,17 +96,18 @@ export class TaskService {
     myUsernames: Set<string>,
   ): boolean {
     if (task.idMembers.length === 0 && task.assignedMembers.length === 0) return true;
-    const matchesMemberId = task.idMembers.some(
+    const matchesMemberId = some(
+      task.idMembers,
       (m) => myMemberIds.has(m) || myUsernames.has(m) || m.toLowerCase().includes('me'),
     );
     if (matchesMemberId) return true;
-    return task.assignedMembers.some((m) => myMemberIds.has(m.id) || myUsernames.has(m.username));
+    return some(task.assignedMembers, (m) => myMemberIds.has(m.id) || myUsernames.has(m.username));
   }
 
   filterTasks(tasks: TaskInterface[], criteria: TaskFilterCriteria): TaskInterface[] {
     const query = criteria.searchQuery.trim().toLowerCase();
 
-    return tasks.filter((task) => {
+    return filter(tasks, (task) => {
       if (task.closed) return false;
       if (!isAccountRelevant(task.accountId, task.accountIds, criteria.selectedAccountId)) {
         return false;
@@ -129,7 +131,7 @@ export class TaskService {
         if (task.labels.length > 0) return false;
       } else if (
         criteria.labelFilter !== 'all' &&
-        !task.labels.some((l) => getLabelDisplayName(l) === criteria.labelFilter)
+        !some(task.labels, (l) => getLabelDisplayName(l) === criteria.labelFilter)
       ) {
         return false;
       }
@@ -139,7 +141,7 @@ export class TaskService {
         const matchDesc = task.desc.toLowerCase().includes(query);
         const matchBoard = task.boardName.toLowerCase().includes(query);
         const matchAccount = task.accountLabel.toLowerCase().includes(query);
-        const matchLabel = task.labels.some((l) => l.name.toLowerCase().includes(query));
+        const matchLabel = some(task.labels, (l) => l.name.toLowerCase().includes(query));
         if (!matchName && !matchDesc && !matchBoard && !matchAccount && !matchLabel) {
           return false;
         }
@@ -182,7 +184,7 @@ export class TaskService {
     );
 
     const counts = countSectionMetrics(relevant);
-    const later = relevant.filter((t) => t.section === 'later' && !t.dueComplete).length;
+    const later = filter(relevant, { section: 'later', dueComplete: false }).length;
     const completionRate =
       counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : 0;
 
@@ -224,28 +226,26 @@ export class TaskService {
       if (t.section === 'overdue' && !t.dueComplete) stat.overdue++;
     });
 
-    const boardStats = Array.from(boardMap.values()).filter((b) => b.total > 0);
+    const boardStats = filter(Array.from(boardMap.values()), (b) => b.total > 0);
 
     const labelMap = new Map<string, LabelStat>();
-    relevant
-      .filter((t) => !t.dueComplete)
-      .forEach((t) => {
-        t.labels.forEach((l) => {
-          const displayName = getLabelDisplayName(l);
-          const existing = labelMap.get(displayName);
-          if (existing) {
-            existing.count++;
-          } else {
-            labelMap.set(displayName, {
-              name: displayName,
-              color: l.color,
-              count: 1,
-            });
-          }
-        });
+    reject(relevant, 'dueComplete').forEach((t) => {
+      t.labels.forEach((l) => {
+        const displayName = getLabelDisplayName(l);
+        const existing = labelMap.get(displayName);
+        if (existing) {
+          existing.count++;
+        } else {
+          labelMap.set(displayName, {
+            name: displayName,
+            color: l.color,
+            count: 1,
+          });
+        }
       });
+    });
 
-    const labelCounts = Array.from(labelMap.values()).sort((a, b) => b.count - a.count);
+    const labelCounts = orderBy(Array.from(labelMap.values()), ['count'], ['desc']);
 
     return {
       total: counts.total,
@@ -516,13 +516,13 @@ export class TaskService {
     }
 
     const exists =
-      task.idMembers.includes(member.id) || task.assignedMembers.some((m) => m.id === member.id);
+      task.idMembers.includes(member.id) || some(task.assignedMembers, { id: member.id });
     const previousIds = [...task.idMembers];
     const previousMembers = [...task.assignedMembers];
 
     if (exists) {
-      task.idMembers = task.idMembers.filter((id) => id !== member.id);
-      task.assignedMembers = task.assignedMembers.filter((m) => m.id !== member.id);
+      task.idMembers = without(task.idMembers, member.id);
+      task.assignedMembers = reject(task.assignedMembers, { id: member.id });
     } else {
       task.idMembers = [...task.idMembers, member.id];
       task.assignedMembers = [...task.assignedMembers, { ...member }];
@@ -560,11 +560,11 @@ export class TaskService {
       throw new Error(`Managing labels is not supported by provider "${task.provider}"`);
     }
 
-    const exists = task.labels.some((l) => l.id === label.id);
+    const exists = some(task.labels, { id: label.id });
     const previousLabels = [...task.labels];
 
     if (exists) {
-      task.labels = task.labels.filter((l) => l.id !== label.id);
+      task.labels = reject(task.labels, { id: label.id });
     } else {
       task.labels = [...task.labels, { ...label }];
     }
@@ -622,7 +622,7 @@ export class TaskService {
       await connector.toggleCardLabel(task.id, created.id, true);
     }
 
-    if (!task.labels.some((l) => l.id === created.id)) {
+    if (!some(task.labels, { id: created.id })) {
       task.labels = [...task.labels, created];
     }
     return created;
@@ -639,9 +639,9 @@ export class TaskService {
     }
 
     if (!task.checklists) return;
-    const checklist = task.checklists.find((c) => c.id === checklistId);
+    const checklist = find(task.checklists, { id: checklistId });
     if (!checklist) return;
-    const item = checklist.checkItems.find((i) => i.id === itemId);
+    const item = find(checklist.checkItems, { id: itemId });
     if (!item) return;
 
     const prevState = item.state;
@@ -666,13 +666,13 @@ export class TaskService {
     const cardAttachments = task.attachments || [];
     if (cardAttachments.length === 0) return comments;
 
-    const byUrl = new Map(cardAttachments.map((att) => [att.url, att]));
+    const byUrl = keyBy(cardAttachments, 'url');
     return comments.map((cmt) => {
       if (!cmt.attachments || cmt.attachments.length === 0) return cmt;
       return {
         ...cmt,
         attachments: cmt.attachments.map((att) => {
-          const matched = byUrl.get(att.url);
+          const matched = byUrl[att.url];
           return matched ? { ...att, ...matched } : att;
         }),
       };
@@ -712,9 +712,7 @@ export class TaskService {
     }
 
     const existing = task.attachments || [];
-    task.attachments = existing.some((a) => a.id === created.id)
-      ? existing
-      : [...existing, created];
+    task.attachments = some(existing, { id: created.id }) ? existing : [...existing, created];
     return created;
   }
 
@@ -728,7 +726,7 @@ export class TaskService {
     }
 
     const previous = [...(task.attachments || [])];
-    task.attachments = previous.filter((a) => a.id !== attachmentId);
+    task.attachments = reject(previous, { id: attachmentId });
 
     const connector = this.getActiveConnector(account);
     if (connector) {

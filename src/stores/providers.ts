@@ -1,3 +1,4 @@
+import { find } from 'lodash-es';
 import { defineStore } from 'pinia';
 import { computed } from 'vue';
 import { connectorRegistry } from '@/connectors';
@@ -33,7 +34,7 @@ export const useProvidersStore = defineStore('providers', () => {
 
   function getBoardCapabilities(boardId?: string | null): ProviderCapabilities {
     if (!boardId) return DEFAULT_PROVIDER_CAPABILITIES;
-    const board = tasksStore.boards.find((b) => b.id === boardId);
+    const board = find(tasksStore.boards, { id: boardId });
     return getProviderCapabilities(board?.provider);
   }
 

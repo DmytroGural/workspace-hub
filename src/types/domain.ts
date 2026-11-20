@@ -12,6 +12,7 @@ export interface ProviderAccount {
   id: string;
   provider: ProviderId;
   label: string;
+  workspaceName?: string;
   credentials: Record<string, string>;
   color: string;
   enabled: boolean;

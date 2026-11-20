@@ -22,6 +22,7 @@ export function createAccountMeta(account: ProviderAccount): AccountMeta {
     accountId: account.id,
     accountLabel: account.label,
     accountColor: account.color,
+    workspaceName: account.workspaceName,
   };
 }
 

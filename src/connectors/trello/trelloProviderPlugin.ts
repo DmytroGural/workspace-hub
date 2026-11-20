@@ -53,14 +53,6 @@ export const trelloProviderPlugin: ProviderPlugin = {
         required: true,
         monospace: true,
       },
-      {
-        key: 'workspace',
-        label: 'Workspace / Organization (Optional)',
-        type: 'text',
-        placeholder: 'e.g. test or Gospodarstwo Rolne Michał Wąsowski',
-        hint: 'Matches your Trello Workspace name. If left blank, your Account Name is used automatically.',
-        required: false,
-      },
     ],
     getAuthHelperUrl(credentials: Record<string, string>): string | null {
       const apiKey = credentials.apiKey?.trim();
@@ -138,12 +130,6 @@ export const trelloProviderPlugin: ProviderPlugin = {
   createConnector(account: ProviderAccount): ITaskProviderApi {
     const apiKey = account.credentials.apiKey || '';
     const token = account.credentials.token || '';
-    return new TrelloRestConnector(
-      apiKey,
-      token,
-      createAccountMeta(account),
-      undefined,
-      account.credentials,
-    );
+    return new TrelloRestConnector(apiKey, token, createAccountMeta(account));
   },
 };

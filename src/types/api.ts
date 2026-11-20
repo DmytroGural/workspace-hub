@@ -33,6 +33,7 @@ export interface AccountMeta {
   accountId: string;
   accountLabel: string;
   accountColor: string;
+  workspaceName?: string;
 }
 
 export type SyncProgressCallback = (loaded: number, total: number, boardName: string) => void;
