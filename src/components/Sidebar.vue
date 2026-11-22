@@ -51,7 +51,7 @@ function goToFilter(filter: FilterSection) {
   <aside
     class="w-64 bg-modern-sidebar text-gray-300 flex flex-col h-full border-r border-[#2d2e32] select-none shrink-0"
   >
-    <SidebarHeader :is-settings-active="route.name === 'settings'" @add-task="openNewTaskModal()" />
+    <SidebarHeader @add-task="openNewTaskModal()" />
 
     <!-- Main Navigation Section -->
     <div class="flex-1 overflow-y-auto px-2 space-y-6 text-xs">

@@ -1,10 +1,6 @@
 <script setup lang="ts">
-import { Plus, Settings, Sparkles } from 'lucide-vue-next';
+import { Github, Plus, Sparkles } from 'lucide-vue-next';
 import { RouterLink } from 'vue-router';
-
-defineProps<{
-  isSettingsActive: boolean;
-}>();
 
 const emit = defineEmits<{
   addTask: [];
@@ -29,18 +25,16 @@ const emit = defineEmits<{
         <div class="text-[11px] text-gray-400">Unified task workspace</div>
       </div>
     </RouterLink>
-    <RouterLink
-      to="/settings"
-      :class="[
-        'p-1 rounded-md transition-colors',
-        isSettingsActive
-          ? 'bg-modern-primary text-white'
-          : 'text-gray-400 hover:text-white hover:bg-modern-sidebar-hover',
-      ]"
-      title="Settings & Integrations"
+    <a
+      href="https://github.com/DmytroGural/workspace-hub"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="p-1 rounded-md transition-colors text-gray-400 hover:text-white hover:bg-modern-sidebar-hover"
+      title="GitHub Repository"
+      aria-label="GitHub Repository"
     >
-      <Settings class="w-4 h-4" />
-    </RouterLink>
+      <Github class="w-4 h-4" />
+    </a>
   </div>
 
   <!-- Quick Action: Create Task -->
