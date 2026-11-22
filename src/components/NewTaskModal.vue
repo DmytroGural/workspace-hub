@@ -7,8 +7,8 @@ import TaskAssigneeEditor from '@/components/task-detail/TaskAssigneeEditor.vue'
 import TaskDescriptionSection from '@/components/task-detail/TaskDescriptionSection.vue';
 import TaskLabelsEditor from '@/components/task-detail/TaskLabelsEditor.vue';
 import { useFiltersStore, useProvidersStore, useTasksStore, useUIStore } from '@/stores';
-import type { TaskLabel, WorkspaceMember } from '@/types/domain';
-import { dateInputToIso } from '@/utils/dateUtils';
+import type { TaskAttachment, TaskLabel, WorkspaceMember } from '@/types/domain';
+import { dateInputToIso, nowIso } from '@/utils/dateUtils';
 
 const tasksStore = useTasksStore();
 const filtersStore = useFiltersStore();
@@ -42,8 +42,49 @@ const idList = ref('');
 const due = ref('');
 const selectedLabels = ref<TaskLabel[]>([]);
 const selectedAssignees = ref<WorkspaceMember[]>([]);
+const pendingFiles = ref<Array<{ id: string; file: File; attachment: TaskAttachment }>>([]);
 const isSubmitting = ref(false);
 const isSavingLabel = ref(false);
+
+const pendingAttachments = computed(() => map(pendingFiles.value, 'attachment'));
+
+function handleAddPendingFiles(files: File[]) {
+  const next = files.map((file, idx) => {
+    const id = `pending_${Date.now()}_${idx}_${file.name}`;
+    const objectUrl = URL.createObjectURL(file);
+    const isImage = file.type.startsWith('image/');
+    return {
+      id,
+      file,
+      attachment: {
+        id,
+        name: file.name,
+        url: objectUrl,
+        mimeType: file.type || undefined,
+        bytes: file.size,
+        previewUrl: isImage ? objectUrl : undefined,
+        createdAt: nowIso(),
+        isImage,
+      },
+    };
+  });
+  pendingFiles.value = [...pendingFiles.value, ...next];
+}
+
+function handleRemovePendingFile(attachmentId: string) {
+  const target = pendingFiles.value.find((p) => p.id === attachmentId);
+  if (target) {
+    URL.revokeObjectURL(target.attachment.url);
+  }
+  pendingFiles.value = reject(pendingFiles.value, { id: attachmentId });
+}
+
+function clearPendingFiles() {
+  for (const item of pendingFiles.value) {
+    URL.revokeObjectURL(item.attachment.url);
+  }
+  pendingFiles.value = [];
+}
 
 const activeCapabilities = computed(() => getBoardCapabilities(idBoard.value));
 
@@ -130,6 +171,7 @@ watch(isNewTaskModalOpen, (isOpen) => {
     due.value = '';
     selectedLabels.value = [];
     selectedAssignees.value = [];
+    clearPendingFiles();
 
     const init = uiStore.newTaskInitialParams;
     const targetBoardId = init?.idBoard || selectedBoardId.value;
@@ -163,7 +205,10 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => window.addEventListener('keydown', handleKeydown));
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown);
+  clearPendingFiles();
+});
 
 async function handleSubmit() {
   if (!name.value.trim() || !idBoard.value || !idList.value) return;
@@ -178,7 +223,9 @@ async function handleSubmit() {
       due: dateInputToIso(due.value),
       labels: selectedLabels.value,
       assignees: selectedAssignees.value,
+      files: map(pendingFiles.value, 'file'),
     });
+    clearPendingFiles();
     closeNewTaskModal();
   } finally {
     isSubmitting.value = false;
@@ -300,8 +347,14 @@ async function handleSubmit() {
         <!-- Description -->
         <TaskDescriptionSection
           :description="desc"
+          :attachments="pendingAttachments"
+          :mention-members="availableBoardMembers"
+          :can-manage-attachments="activeCapabilities.canManageAttachments"
+          :is-uploading="isSubmitting && pendingFiles.length > 0"
           layout="stacked"
           @update-description="desc = $event"
+          @upload-files="handleAddPendingFiles"
+          @delete-attachment="handleRemovePendingFile"
         />
 
         <!-- Labels (multi-label management via TaskLabelsEditor) -->

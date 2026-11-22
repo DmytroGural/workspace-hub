@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { AlertCircle, FileText, Loader2, MessageSquare, Paperclip, Send, X } from 'lucide-vue-next';
 import { onBeforeUnmount, ref, watch } from 'vue';
-import type { TaskComment } from '@/types/domain';
+import LexicalMarkdownEditor from '@/components/editor/LexicalMarkdownEditor.vue';
+import type { TaskComment, WorkspaceMember } from '@/types/domain';
 import { formatCommentDateTime } from '@/utils/dateUtils';
 import { formatBytes, getMemberInitials } from '@/utils/taskPresentation';
 import TaskAttachmentList from './TaskAttachmentList.vue';
@@ -16,6 +17,7 @@ const props = withDefaults(
   defineProps<{
     taskId: string;
     comments?: TaskComment[];
+    mentionMembers?: WorkspaceMember[];
     canComment?: boolean;
     canManageAttachments?: boolean;
     isLoading: boolean;
@@ -23,6 +25,7 @@ const props = withDefaults(
     error: string | null;
   }>(),
   {
+    mentionMembers: () => [],
     canComment: true,
     canManageAttachments: true,
   },
@@ -33,6 +36,7 @@ const emit = defineEmits<{
 }>();
 
 const newCommentText = ref('');
+const commentResetCount = ref(0);
 const pendingAttachments = ref<PendingAttachment[]>([]);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const isDragging = ref(false);
@@ -50,6 +54,7 @@ watch(
   () => props.taskId,
   () => {
     newCommentText.value = '';
+    commentResetCount.value += 1;
     clearPendingAttachments();
   },
 );
@@ -59,6 +64,7 @@ watch(
   (nowPosting, wasPosting) => {
     if (wasPosting && !nowPosting && !props.error) {
       newCommentText.value = '';
+      commentResetCount.value += 1;
       clearPendingAttachments();
     }
   },
@@ -164,12 +170,15 @@ function submitComment() {
           </span>
         </div>
 
-        <p
-          v-if="comment.text"
-          class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap break-words pl-7"
-        >
-          {{ comment.text }}
-        </p>
+        <div v-if="comment.text" class="pl-7">
+          <LexicalMarkdownEditor
+            :model-value="comment.text"
+            :reset-key="comment.id"
+            :editable="false"
+            borderless
+            :mention-members="mentionMembers"
+          />
+        </div>
 
         <TaskAttachmentList
           v-if="comment.attachments && comment.attachments.length > 0"
@@ -195,14 +204,15 @@ function submitComment() {
         isDragging ? 'ring-2 ring-indigo-400 bg-indigo-50/40 p-1.5 -m-1.5' : '',
       ]"
     >
-      <textarea
+      <LexicalMarkdownEditor
         v-model="newCommentText"
-        @keydown.ctrl.enter.prevent="submitComment"
-        @keydown.meta.enter.prevent="submitComment"
+        :reset-key="`${taskId}-${commentResetCount}`"
+        variant="compact"
+        submit-on-ctrl-enter
+        :mention-members="mentionMembers"
+        placeholder="Write a comment in Markdown, @mention someone, or drop/paste files..."
+        @submit="submitComment"
         @paste="handlePaste"
-        rows="2"
-        placeholder="Write a comment or drop/paste files... (Ctrl+Enter to send)"
-        class="w-full text-xs text-gray-800 bg-white border border-gray-200 focus:border-modern-primary focus:ring-1 focus:ring-modern-primary rounded-lg p-2.5 transition-colors outline-none resize-y"
       />
 
       <!-- Pending File Attachments -->

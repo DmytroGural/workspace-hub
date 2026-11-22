@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { AlertCircle, Loader2, Paperclip } from 'lucide-vue-next';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import type { TaskAttachment } from '@/types/domain';
+import { computed, ref, watch } from 'vue';
+import LexicalMarkdownEditor from '@/components/editor/LexicalMarkdownEditor.vue';
+import type { TaskAttachment, WorkspaceMember } from '@/types/domain';
 import TaskAttachmentList from './TaskAttachmentList.vue';
 
 const props = withDefaults(
@@ -9,6 +10,7 @@ const props = withDefaults(
     taskId?: string;
     description: string;
     attachments?: TaskAttachment[];
+    mentionMembers?: WorkspaceMember[];
     canEdit?: boolean;
     canManageAttachments?: boolean;
     isUploading?: boolean;
@@ -19,6 +21,7 @@ const props = withDefaults(
   {
     taskId: '',
     attachments: () => [],
+    mentionMembers: () => [],
     canEdit: true,
     canManageAttachments: false,
     isUploading: false,
@@ -36,47 +39,24 @@ const emit = defineEmits<{
   deleteAttachment: [attachmentId: string];
 }>();
 
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const isDragging = ref(false);
-const localDesc = ref(props.description);
+const localDesc = ref(props.description || '');
 
-const textareaId = computed(() => (props.taskId ? `task-desc-${props.taskId}` : 'new-task-desc'));
-
-function autoResize() {
-  const el = textareaRef.value;
-  if (!el) return;
-  el.style.height = 'auto';
-  el.style.height = `${el.scrollHeight}px`;
-}
+const editorId = computed(() => (props.taskId ? `task-desc-${props.taskId}` : 'new-task-desc'));
 
 watch(
   () => [props.taskId, props.description] as const,
-  ([id, desc], prev) => {
-    const isNewTask = !prev || prev[0] !== id;
-    if (isNewTask || document.activeElement !== textareaRef.value) {
-      localDesc.value = desc || '';
-    }
+  ([_id, desc]) => {
+    localDesc.value = desc || '';
   },
   { immediate: true },
 );
 
-watch(
-  localDesc,
-  () => {
-    nextTick(autoResize);
-  },
-  { flush: 'post' },
-);
-
-onMounted(() => {
-  autoResize();
-});
-
-function handleInput() {
-  autoResize();
-  emit('updateDescription', localDesc.value);
-  emit('update:description', localDesc.value);
+function handleEditorUpdate(value: string) {
+  localDesc.value = value;
+  emit('updateDescription', value);
+  emit('update:description', value);
 }
 
 function handleBlur() {
@@ -124,7 +104,7 @@ function handlePaste(event: ClipboardEvent) {
   >
     <div class="flex items-center justify-between gap-2">
       <label
-        :for="textareaId"
+        :for="editorId"
         :class="
           layout === 'stacked'
             ? 'block font-semibold text-gray-700 mb-1'
@@ -156,27 +136,22 @@ function handlePaste(event: ClipboardEvent) {
         isDragging ? 'ring-2 ring-indigo-400 bg-indigo-50/40 p-1 -m-1' : '',
       ]"
     >
-      <textarea
-        :id="textareaId"
-        ref="textareaRef"
-        v-model="localDesc"
-        :readonly="!canEdit"
-        @input="handleInput"
-        @blur="handleBlur"
-        @paste="handlePaste"
-        rows="3"
+      <LexicalMarkdownEditor
+        :id="editorId"
+        :model-value="localDesc"
+        :reset-key="taskId"
+        :editable="canEdit"
+        :mention-members="mentionMembers"
+        :variant="layout"
         :placeholder="
           placeholder ||
           (layout === 'stacked'
-            ? 'Add context, specifications, or links...'
-            : 'Add more details, links, or drop/paste files here...')
+            ? 'Add context, specifications, or links (Markdown)...'
+            : 'Add details in Markdown, or drop/paste files here...')
         "
-        :class="[
-          'w-full text-xs rounded-lg transition-colors outline-none resize-none min-h-[76px] max-h-60',
-          layout === 'stacked'
-            ? 'px-3 py-2 border border-gray-300 focus:outline-none focus:border-modern-primary bg-white'
-            : 'text-gray-800 bg-gray-50 hover:bg-gray-100/60 focus:bg-white border border-gray-200 focus:border-modern-primary focus:ring-1 focus:ring-modern-primary p-3',
-        ]"
+        @update:model-value="handleEditorUpdate"
+        @blur="handleBlur"
+        @paste="handlePaste"
       />
     </div>
 

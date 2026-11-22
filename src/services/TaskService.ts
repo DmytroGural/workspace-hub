@@ -497,6 +497,12 @@ export class TaskService {
       newTask.url = created.url;
     }
 
+    if (input.files && input.files.length > 0 && caps.canManageAttachments) {
+      for (const file of input.files) {
+        await this.uploadTaskAttachment(newTask, file, account);
+      }
+    }
+
     return newTask;
   }
 

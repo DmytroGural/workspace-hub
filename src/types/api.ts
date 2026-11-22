@@ -231,6 +231,7 @@ export interface CreateTaskInput {
   due?: string | null;
   labels?: TaskLabel[];
   assignees?: WorkspaceMember[];
+  files?: File[];
 }
 
 export interface BoardStat {
