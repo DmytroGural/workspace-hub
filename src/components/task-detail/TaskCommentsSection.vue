@@ -1,5 +1,16 @@
 <script setup lang="ts">
-import { AlertCircle, FileText, Loader2, MessageSquare, Paperclip, Send, X } from 'lucide-vue-next';
+import {
+  AlertCircle,
+  Check,
+  FileText,
+  Loader2,
+  MessageSquare,
+  Paperclip,
+  Pencil,
+  Send,
+  Trash2,
+  X,
+} from 'lucide-vue-next';
 import { onBeforeUnmount, ref, watch } from 'vue';
 import LexicalMarkdownEditor from '@/components/editor/LexicalMarkdownEditor.vue';
 import type { TaskComment, WorkspaceMember } from '@/types/domain';
@@ -18,6 +29,8 @@ const props = withDefaults(
     taskId: string;
     comments?: TaskComment[];
     mentionMembers?: WorkspaceMember[];
+    myMemberIds?: Set<string>;
+    myUsernames?: Set<string>;
     canComment?: boolean;
     canManageAttachments?: boolean;
     isLoading: boolean;
@@ -26,6 +39,8 @@ const props = withDefaults(
   }>(),
   {
     mentionMembers: () => [],
+    myMemberIds: () => new Set<string>(),
+    myUsernames: () => new Set<string>(),
     canComment: true,
     canManageAttachments: true,
   },
@@ -33,6 +48,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   addComment: [payload: { text: string; files: File[] }];
+  updateComment: [payload: { commentId: string; text: string }];
+  deleteComment: [commentId: string];
 }>();
 
 const newCommentText = ref('');
@@ -40,6 +57,10 @@ const commentResetCount = ref(0);
 const pendingAttachments = ref<PendingAttachment[]>([]);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const isDragging = ref(false);
+
+const editingCommentId = ref<string | null>(null);
+const editingCommentText = ref('');
+const mutatingCommentId = ref<string | null>(null);
 
 function clearPendingAttachments() {
   pendingAttachments.value.forEach((item) => {
@@ -55,9 +76,73 @@ watch(
   () => {
     newCommentText.value = '';
     commentResetCount.value += 1;
+    editingCommentId.value = null;
+    editingCommentText.value = '';
+    mutatingCommentId.value = null;
     clearPendingAttachments();
   },
 );
+
+watch(
+  () => props.comments,
+  (nextComments) => {
+    if (mutatingCommentId.value && !props.error) {
+      if (editingCommentId.value === mutatingCommentId.value) {
+        editingCommentId.value = null;
+        editingCommentText.value = '';
+      }
+      mutatingCommentId.value = null;
+      return;
+    }
+    if (editingCommentId.value && !nextComments?.some((c) => c.id === editingCommentId.value)) {
+      editingCommentId.value = null;
+      editingCommentText.value = '';
+    }
+  },
+);
+
+watch(
+  () => props.error,
+  (err) => {
+    if (err) {
+      mutatingCommentId.value = null;
+    }
+  },
+);
+
+function isOwnComment(comment: TaskComment): boolean {
+  if (props.myMemberIds.has(comment.author.id)) return true;
+  if (comment.author.username && props.myUsernames.has(comment.author.username)) return true;
+  return false;
+}
+
+function startEditComment(comment: TaskComment) {
+  editingCommentId.value = comment.id;
+  editingCommentText.value = comment.text || '';
+}
+
+function cancelEditComment() {
+  editingCommentId.value = null;
+  editingCommentText.value = '';
+}
+
+function saveEditComment(comment: TaskComment) {
+  const trimmed = editingCommentText.value.trim();
+  const hasAttachments = Boolean(comment.attachments && comment.attachments.length > 0);
+  if ((!trimmed && !hasAttachments) || mutatingCommentId.value) return;
+  if (trimmed === (comment.text || '').trim()) {
+    cancelEditComment();
+    return;
+  }
+  mutatingCommentId.value = comment.id;
+  emit('updateComment', { commentId: comment.id, text: trimmed });
+}
+
+function handleDeleteComment(commentId: string) {
+  if (mutatingCommentId.value) return;
+  mutatingCommentId.value = commentId;
+  emit('deleteComment', commentId);
+}
 
 watch(
   () => props.isPosting,
@@ -145,7 +230,7 @@ function submitComment() {
       <div
         v-for="comment in comments"
         :key="comment.id"
-        class="bg-gray-50/90 border border-gray-200/80 rounded-xl p-3 space-y-2"
+        class="group bg-gray-50/90 border border-gray-200/80 rounded-xl p-3 space-y-2"
       >
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
@@ -165,15 +250,80 @@ function submitComment() {
               {{ comment.author.fullName }}
             </span>
           </div>
-          <span class="text-[10px] text-gray-400 shrink-0">
-            {{ formatCommentDateTime(comment.createdAt) }}
-          </span>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-[10px] text-gray-400">
+              {{ formatCommentDateTime(comment.createdAt) }}
+            </span>
+            <div
+              v-if="canComment && isOwnComment(comment) && editingCommentId !== comment.id"
+              class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+            >
+              <button
+                type="button"
+                @click="startEditComment(comment)"
+                :disabled="mutatingCommentId === comment.id"
+                class="p-1 rounded text-gray-400 hover:text-modern-primary hover:bg-white transition-colors disabled:opacity-40"
+                title="Edit comment"
+                aria-label="Edit comment"
+              >
+                <Pencil class="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                @click="handleDeleteComment(comment.id)"
+                :disabled="mutatingCommentId === comment.id"
+                class="p-1 rounded text-gray-400 hover:text-rose-600 hover:bg-white transition-colors disabled:opacity-40"
+                title="Delete comment"
+                aria-label="Delete comment"
+              >
+                <Loader2 v-if="mutatingCommentId === comment.id" class="w-3 h-3 animate-spin" />
+                <Trash2 v-else class="w-3 h-3" />
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div v-if="comment.text" class="pl-7">
+        <div v-if="editingCommentId === comment.id" class="pl-7 space-y-2">
+          <LexicalMarkdownEditor
+            v-model="editingCommentText"
+            :reset-key="`${comment.id}-edit`"
+            variant="compact"
+            submit-on-ctrl-enter
+            :mention-members="mentionMembers"
+            placeholder="Edit your comment..."
+            @submit="saveEditComment(comment)"
+          />
+          <div class="flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              @click="cancelEditComment"
+              :disabled="mutatingCommentId === comment.id"
+              class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-gray-600 hover:bg-gray-200/70 transition-colors disabled:opacity-40"
+            >
+              <X class="w-3 h-3" />
+              <span>Cancel</span>
+            </button>
+            <button
+              type="button"
+              @click="saveEditComment(comment)"
+              :disabled="
+                mutatingCommentId === comment.id ||
+                (!editingCommentText.trim() &&
+                  !(comment.attachments && comment.attachments.length > 0))
+              "
+              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-white bg-modern-primary hover:bg-modern-hover transition-colors disabled:opacity-50"
+            >
+              <Loader2 v-if="mutatingCommentId === comment.id" class="w-3 h-3 animate-spin" />
+              <Check v-else class="w-3 h-3" />
+              <span>Save</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="comment.text" class="pl-7">
           <LexicalMarkdownEditor
             :model-value="comment.text"
-            :reset-key="comment.id"
+            :reset-key="`${comment.id}-${comment.text}`"
             :editable="false"
             borderless
             :mention-members="mentionMembers"

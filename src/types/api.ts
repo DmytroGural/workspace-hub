@@ -106,6 +106,13 @@ export interface ITaskProviderApi {
     text: string,
     attachments?: TaskAttachment[],
   ): Promise<TaskComment>;
+  updateCardComment?(
+    cardId: string,
+    commentId: string,
+    text: string,
+    attachments?: TaskAttachment[],
+  ): Promise<TaskComment>;
+  deleteCardComment?(cardId: string, commentId: string): Promise<void>;
   uploadAttachment?(cardId: string, file: File): Promise<TaskAttachment>;
   deleteAttachment?(cardId: string, attachmentId: string): Promise<void>;
 }

@@ -303,6 +303,32 @@ export class TrelloRestConnector extends BaseTaskProviderConnector {
     return comment;
   }
 
+  async updateCardComment(
+    cardId: string,
+    commentId: string,
+    text: string,
+    attachments?: TaskAttachment[],
+  ): Promise<TaskComment> {
+    const formattedText = formatCommentTextWithAttachments(text, attachments);
+    const rawAction = await this.http.put<TrelloRawCommentAction>(
+      `/cards/${cardId}/actions/${commentId}/comments`,
+      {
+        params: {
+          text: formattedText,
+        },
+      },
+    );
+    const comment = mapRawComment(rawAction);
+    if (attachments && attachments.length > 0) {
+      comment.attachments = attachments;
+    }
+    return comment;
+  }
+
+  async deleteCardComment(cardId: string, commentId: string): Promise<void> {
+    await this.http.delete(`/cards/${cardId}/actions/${commentId}/comments`);
+  }
+
   async uploadAttachment(cardId: string, file: File): Promise<TaskAttachment> {
     const formData = new FormData();
     formData.append('file', file, file.name);

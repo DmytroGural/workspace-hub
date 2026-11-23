@@ -3,7 +3,7 @@ import { AlertCircle } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storageService } from '@/services/StorageService';
-import { useProvidersStore, useTasksStore, useUIStore } from '@/stores';
+import { useAccountsStore, useProvidersStore, useTasksStore, useUIStore } from '@/stores';
 import type { TaskLabel, WorkspaceMember } from '@/types/domain';
 import { getErrorMessage } from '@/utils/errorUtils';
 import TaskChecklistsSection from './task-detail/TaskChecklistsSection.vue';
@@ -12,13 +12,17 @@ import TaskDescriptionSection from './task-detail/TaskDescriptionSection.vue';
 import TaskDetailHeader from './task-detail/TaskDetailHeader.vue';
 import TaskMetadataSection from './task-detail/TaskMetadataSection.vue';
 
+const accountsStore = useAccountsStore();
 const tasksStore = useTasksStore();
 const providersStore = useProvidersStore();
 const uiStore = useUIStore();
 
+const { myMemberIds, myUsernames } = storeToRefs(accountsStore);
+
 const {
   selectedTask,
   selectedTaskId,
+  boards,
   lists,
   boardLabelsMap,
   boardMembersMap,
@@ -45,6 +49,8 @@ const {
   refreshTaskDetails,
   loadCommentsForTask,
   addComment,
+  updateComment,
+  deleteComment,
   uploadAttachment,
   deleteAttachment,
 } = tasksStore;
@@ -53,6 +59,9 @@ const { getProviderName, getTaskCapabilities, getProviderLabelColors } = provide
 
 const localName = ref('');
 const localDesc = ref('');
+const selectedBoardUrl = computed(
+  () => boards.value.find((board) => board.id === selectedTask.value?.idBoard)?.url,
+);
 const drawerRef = ref<HTMLElement | null>(null);
 const nameInputRef = ref<HTMLTextAreaElement | null>(null);
 const isSavingLabel = ref(false);
@@ -319,6 +328,16 @@ async function handleAddComment(payload: { text: string; files: File[] }) {
   await addComment(selectedTask.value.id, payload.text, payload.files);
 }
 
+async function handleUpdateComment(payload: { commentId: string; text: string }) {
+  if (!selectedTask.value) return;
+  await updateComment(selectedTask.value.id, payload.commentId, payload.text);
+}
+
+async function handleDeleteComment(commentId: string) {
+  if (!selectedTask.value) return;
+  await deleteComment(selectedTask.value.id, commentId);
+}
+
 async function handleUploadDescriptionFiles(files: File[]) {
   if (!selectedTask.value) return;
   for (const file of files) {
@@ -439,6 +458,7 @@ async function handleDeleteTask() {
 
       <TaskMetadataSection
         :task="selectedTask"
+        :board-url="selectedBoardUrl"
         :available-lists="availableLists"
         :board-labels="boardLabels"
         :board-members="boardMembers"
@@ -451,7 +471,6 @@ async function handleDeleteTask() {
         @toggle-assignee="handleToggleAssignee"
         @toggle-label="handleToggleLabel"
         @create-label="handleCreateLabel"
-        @open-board="close"
       />
 
       <div class="border-t border-gray-100" />
@@ -485,12 +504,16 @@ async function handleDeleteTask() {
         :task-id="selectedTask.id"
         :comments="selectedTask.comments"
         :mention-members="boardMembers"
+        :my-member-ids="myMemberIds"
+        :my-usernames="myUsernames"
         :can-comment="taskCapabilities.canComment"
         :can-manage-attachments="taskCapabilities.canManageAttachments"
         :is-loading="isLoadingComments"
         :is-posting="isPostingComment"
         :error="commentsError"
         @add-comment="handleAddComment"
+        @update-comment="handleUpdateComment"
+        @delete-comment="handleDeleteComment"
       />
     </div>
   </aside>

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ArrowUpRight } from 'lucide-vue-next';
-import { computed, ref, watch } from 'vue';
-import { RouterLink, useRoute } from 'vue-router';
+import { ref, watch } from 'vue';
 import type { ProviderCapabilities } from '@/types/api';
 import type { BoardList, TaskInterface, TaskLabel, WorkspaceMember } from '@/types/domain';
 import { dateInputToIso, isoToDateInput } from '@/utils/dateUtils';
@@ -10,6 +9,7 @@ import TaskLabelsEditor from './TaskLabelsEditor.vue';
 
 const props = defineProps<{
   task: TaskInterface;
+  boardUrl?: string;
   availableLists: BoardList[];
   boardLabels: TaskLabel[];
   boardMembers: WorkspaceMember[];
@@ -25,20 +25,7 @@ const emit = defineEmits<{
   toggleAssignee: [member: WorkspaceMember];
   toggleLabel: [label: TaskLabel];
   createLabel: [payload: { name: string; color: string }];
-  openBoard: [];
 }>();
-
-const route = useRoute();
-
-const boardRouteLocation = computed(() => {
-  const q = String(route.query.view || 'list');
-  const view = ['list', 'board', 'calendar'].includes(q) ? q : 'list';
-  return {
-    name: 'board' as const,
-    params: { boardId: props.task.idBoard },
-    query: { view },
-  };
-});
 
 const localDue = ref('');
 const localListId = ref('');
@@ -110,9 +97,11 @@ function handleListChange() {
     <div class="grid grid-cols-3 items-center py-1">
       <span class="text-gray-400 font-medium">Project / Board</span>
       <div class="col-span-2 min-w-0">
-        <RouterLink
-          :to="boardRouteLocation"
-          @click="emit('openBoard')"
+        <a
+          v-if="boardUrl"
+          :href="boardUrl"
+          target="_blank"
+          rel="noopener noreferrer"
           class="inline-flex items-center gap-2 max-w-full px-1.5 py-1 -mx-1.5 rounded-md hover:bg-indigo-50/70 group transition-colors"
           :title="`Open ${task.boardName}`"
         >
@@ -128,7 +117,16 @@ function handleListChange() {
           <ArrowUpRight
             class="w-3.5 h-3.5 text-gray-400 group-hover:text-modern-primary shrink-0 transition-colors"
           />
-        </RouterLink>
+        </a>
+        <div v-else class="inline-flex items-center gap-2 max-w-full px-1.5 py-1 -mx-1.5">
+          <span
+            class="w-2.5 h-2.5 rounded-sm shrink-0"
+            :style="{ backgroundColor: task.boardColor }"
+          />
+          <span class="font-semibold text-gray-800 truncate">
+            {{ task.boardName }}
+          </span>
+        </div>
       </div>
     </div>
 

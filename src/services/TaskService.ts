@@ -801,6 +801,68 @@ export class TaskService {
     task.commentsCount = task.comments.length;
     return created;
   }
+
+  async updateTaskComment(
+    task: TaskInterface,
+    commentId: string,
+    text: string,
+    account?: ProviderAccount,
+  ): Promise<TaskComment> {
+    if (!this.getCapabilities(account).canComment) {
+      throw new Error(`Comments are not supported by provider "${task.provider}"`);
+    }
+
+    const existingList = task.comments || [];
+    const target = find(existingList, { id: commentId });
+    if (!target) {
+      throw new Error('Comment not found');
+    }
+
+    const trimmed = text.trim();
+    if (!trimmed && (!target.attachments || target.attachments.length === 0)) {
+      throw new Error('Comment text cannot be empty');
+    }
+
+    const connector = this.getActiveConnector(account);
+    let updated: TaskComment;
+
+    if (connector) {
+      if (!connector.updateCardComment) {
+        throw new Error(`Provider "${account?.provider}" does not implement editing comments`);
+      }
+      updated = await connector.updateCardComment(task.id, commentId, trimmed, target.attachments);
+    } else {
+      updated = {
+        ...target,
+        text: trimmed,
+      };
+    }
+
+    const enriched = this.enrichCommentAttachments(task, [updated])[0] || updated;
+    task.comments = existingList.map((c) => (c.id === commentId ? enriched : c));
+    return enriched;
+  }
+
+  async deleteTaskComment(
+    task: TaskInterface,
+    commentId: string,
+    account?: ProviderAccount,
+  ): Promise<void> {
+    if (!this.getCapabilities(account).canComment) {
+      throw new Error(`Comments are not supported by provider "${task.provider}"`);
+    }
+
+    const connector = this.getActiveConnector(account);
+    if (connector) {
+      if (!connector.deleteCardComment) {
+        throw new Error(`Provider "${account?.provider}" does not implement deleting comments`);
+      }
+      await connector.deleteCardComment(task.id, commentId);
+    }
+
+    task.comments = reject(task.comments || [], { id: commentId });
+    task.commentsCount = task.comments.length;
+  }
 }
 
 export const taskService = new TaskService();

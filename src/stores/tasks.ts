@@ -433,6 +433,32 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
+  async function updateComment(taskId: string, commentId: string, text: string) {
+    const task = findTask(taskId);
+    if (!task) return;
+    const account = resolveAccountForTask(task);
+    commentsError.value = null;
+    try {
+      return await taskService.updateTaskComment(task, commentId, text, account);
+    } catch (err: unknown) {
+      commentsError.value = getErrorMessage(err, 'Failed to update comment');
+      throw err;
+    }
+  }
+
+  async function deleteComment(taskId: string, commentId: string) {
+    const task = findTask(taskId);
+    if (!task) return;
+    const account = resolveAccountForTask(task);
+    commentsError.value = null;
+    try {
+      await taskService.deleteTaskComment(task, commentId, account);
+    } catch (err: unknown) {
+      commentsError.value = getErrorMessage(err, 'Failed to delete comment');
+      throw err;
+    }
+  }
+
   // Attachments
   async function uploadAttachment(taskId: string, file: File) {
     const task = findTask(taskId);
@@ -589,6 +615,8 @@ export const useTasksStore = defineStore('tasks', () => {
     loadBoardMembers,
     loadCommentsForTask,
     addComment,
+    updateComment,
+    deleteComment,
     uploadAttachment,
     deleteAttachment,
     clearTasksState,
