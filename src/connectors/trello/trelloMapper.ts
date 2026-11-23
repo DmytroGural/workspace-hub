@@ -120,6 +120,7 @@ export function mapRawCard(
     dueComplete: !!raw.dueComplete,
     idBoard: raw.idBoard,
     idList: raw.idList,
+    pos: typeof raw.pos === 'number' ? raw.pos : undefined,
     closed: !!raw.closed,
     idMembers: raw.idMembers || [],
     labels: (raw.labels || []).map((l) => mapRawLabel(l, raw.idBoard)),

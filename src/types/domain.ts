@@ -103,6 +103,7 @@ export interface TaskInterface {
   dueComplete: boolean;
   idBoard: string;
   idList: string;
+  pos?: number;
   closed?: boolean;
   idMembers: string[];
   labels: TaskLabel[];

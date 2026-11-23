@@ -64,11 +64,25 @@ export function useTaskView() {
     return isBoardScoped.value && getTaskCapabilities(task).canMoveBetweenLists;
   }
 
-  async function moveTaskToList(taskId: string, targetListId: string): Promise<void> {
+  async function moveTaskToList(
+    taskId: string,
+    targetListId: string,
+    targetPos?: number,
+  ): Promise<void> {
     if (!isBoardScoped.value || !taskId) return;
     const task = filteredTasks.value.find((item) => item.id === taskId);
-    if (!task || !canMoveTask(task) || task.idList === targetListId) return;
-    await updateTask(task.id, { idList: targetListId });
+    if (!task || !canMoveTask(task)) return;
+
+    const listChanged = task.idList !== targetListId;
+    const posChanged = targetPos !== undefined && targetPos !== task.pos;
+    if (!listChanged && !posChanged) return;
+
+    const updates: Partial<TaskInterface> = {};
+    if (listChanged) updates.idList = targetListId;
+    if (targetPos !== undefined && (listChanged || posChanged)) {
+      updates.pos = targetPos;
+    }
+    await updateTask(task.id, updates);
   }
 
   return {

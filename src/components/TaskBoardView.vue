@@ -29,14 +29,16 @@ const {
   handleDragStart,
   handleDragEnd,
   handleDragOver,
+  handleCardDragOver,
   handleDragLeave,
+  isDropSlotActive,
   handleDrop,
 } = useBoardDragAndDrop({
   isBoardScoped: () => isBoardScoped.value,
   canMoveTask,
   findTaskById: (taskId) => tasks.value.find((task) => task.id === taskId),
-  onDropTask: (taskId, targetListId) => {
-    void moveTaskToList(taskId, targetListId);
+  onDropTask: (taskId, targetListId, targetPos) => {
+    void moveTaskToList(taskId, targetListId, targetPos);
   },
 });
 </script>
@@ -47,10 +49,10 @@ const {
       v-for="col in columns"
       :key="col.id"
       :aria-label="col.title"
-      @dragover.prevent="handleDragOver($event, col.id)"
-      @dragenter.prevent="handleDragOver($event, col.id)"
+      @dragover.prevent="handleDragOver($event, col.id, col.tasks.length)"
+      @dragenter.prevent="handleDragOver($event, col.id, col.tasks.length)"
       @dragleave="handleDragLeave($event, col.id)"
-      @drop.prevent="handleDrop($event, col.id)"
+      @drop.prevent="handleDrop($event, col.id, col.tasks)"
       class="w-80 shrink-0 flex flex-col rounded-xl max-h-full border shadow-sm transition-colors"
       :class="[
         col.topColor ? `border-t-4 ${col.topColor}` : '',
@@ -88,17 +90,27 @@ const {
           Drop card here
         </div>
 
-        <TaskBoardCard
-          v-for="task in col.tasks"
-          :key="task.id"
-          :task="task"
-          :draggable="canMoveTask(task)"
-          :is-dragging="draggedTaskId === task.id"
-          :is-selected="selectedTaskId === task.id"
-          @open="openTask"
-          @toggle-complete="toggleTaskComplete"
-          @drag-start="handleDragStart"
-          @drag-end="handleDragEnd"
+        <template v-for="(task, idx) in col.tasks" :key="task.id">
+          <div
+            v-if="isDropSlotActive(col.id, idx, col.tasks)"
+            class="h-0.5 bg-indigo-500 rounded-full mx-0.5 pointer-events-none"
+          />
+          <TaskBoardCard
+            :task="task"
+            :draggable="canMoveTask(task)"
+            :is-dragging="draggedTaskId === task.id"
+            :is-selected="selectedTaskId === task.id"
+            @open="openTask"
+            @toggle-complete="toggleTaskComplete"
+            @drag-start="handleDragStart"
+            @drag-end="handleDragEnd"
+            @dragover.prevent.stop="handleCardDragOver($event, col.id, idx)"
+          />
+        </template>
+
+        <div
+          v-if="col.tasks.length > 0 && isDropSlotActive(col.id, col.tasks.length, col.tasks)"
+          class="h-0.5 bg-indigo-500 rounded-full mx-0.5 pointer-events-none"
         />
       </div>
     </section>

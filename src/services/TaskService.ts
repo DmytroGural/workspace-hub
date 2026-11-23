@@ -342,7 +342,7 @@ export class TaskService {
   ): Promise<void> {
     const caps = this.getCapabilities(account);
     const isMoveOnly =
-      updates.idList !== undefined &&
+      (updates.idList !== undefined || updates.pos !== undefined) &&
       updates.name === undefined &&
       updates.desc === undefined &&
       updates.due === undefined;
@@ -360,6 +360,7 @@ export class TaskService {
       due: task.due,
       section: task.section,
       idList: task.idList,
+      pos: task.pos,
       listName: task.listName,
     };
 
@@ -388,6 +389,7 @@ export class TaskService {
           desc: updates.desc,
           due: updates.due,
           idList: updates.idList,
+          pos: updates.pos,
           closed: updates.closed,
         });
       } catch (err) {

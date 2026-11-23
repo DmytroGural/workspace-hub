@@ -49,6 +49,7 @@ export interface UpdateCardPayload {
   desc?: string;
   due?: string | null;
   idList?: string;
+  pos?: number;
   closed?: boolean;
 }
 

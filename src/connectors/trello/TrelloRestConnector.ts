@@ -188,6 +188,7 @@ export class TrelloRestConnector extends BaseTaskProviderConnector {
       payload.desc !== undefined ||
       payload.due !== undefined ||
       payload.idList !== undefined ||
+      payload.pos !== undefined ||
       payload.closed !== undefined;
 
     if (!hasCoreFields) return;
@@ -198,6 +199,7 @@ export class TrelloRestConnector extends BaseTaskProviderConnector {
         ...(payload.desc !== undefined ? { desc: payload.desc } : {}),
         ...(payload.due !== undefined ? { due: payload.due || 'null' } : {}),
         ...(payload.idList !== undefined ? { idList: payload.idList } : {}),
+        ...(payload.pos !== undefined ? { pos: payload.pos } : {}),
         ...(payload.closed !== undefined ? { closed: payload.closed } : {}),
       },
     });
