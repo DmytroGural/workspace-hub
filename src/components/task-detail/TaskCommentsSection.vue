@@ -215,11 +215,11 @@ function submitComment() {
             <span class="text-xs font-semibold text-gray-800 truncate">
               {{ comment.author.fullName }}
             </span>
-          </div>
-          <div class="flex items-center gap-1.5 shrink-0">
             <span class="text-[10px] text-gray-400">
               {{ formatCommentDateTime(comment.createdAt) }}
             </span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
             <div
               v-if="canComment && isOwnComment(comment) && editingCommentId !== comment.id"
               class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
