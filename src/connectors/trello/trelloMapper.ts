@@ -8,7 +8,7 @@ import type {
   TaskLabel,
   WorkspaceMember,
 } from '@/types/domain';
-import { classifyAsanaSection } from '@/utils/taskClassification';
+import { classifyTaskSection } from '@/utils/taskClassification';
 import type {
   TrelloRawAttachment,
   TrelloRawBoard,
@@ -19,7 +19,7 @@ import type {
   TrelloRawMember,
 } from './trelloTypes';
 
-export { classifyAsanaSection as determineSection };
+export { classifyTaskSection as determineSection };
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?.*)?$/i;
 const COMMENT_ATTACHMENT_LINE_RE = /^\[📎\s+([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/;
@@ -110,7 +110,7 @@ export function mapRawCard(
   meta: AccountMeta,
 ): TaskInterface {
   const assignedMembers: WorkspaceMember[] = (raw.members || []).map(mapRawMember);
-  const section = classifyAsanaSection(raw.due || null, !!raw.dueComplete);
+  const section = classifyTaskSection(raw.due || null, !!raw.dueComplete);
 
   return {
     id: raw.id,

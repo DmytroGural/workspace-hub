@@ -18,6 +18,8 @@ export interface HttpRequestOptions {
   params?: Record<string, string | number | boolean | undefined | null>;
   headers?: Record<string, string>;
   body?: unknown;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface IHttpClient {

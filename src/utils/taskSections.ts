@@ -1,4 +1,4 @@
-import type { AsanaSection, BoardList } from '@/types/domain';
+import type { BoardList, TaskTimeSection } from '@/types/domain';
 
 export type TaskDisplayView = 'list' | 'board' | 'calendar';
 
@@ -9,7 +9,7 @@ export function resolveVisibleViewMode(rawView: unknown): TaskDisplayView {
   return VALID_TASK_VIEWS.includes(candidate) ? candidate : 'list';
 }
 
-export const SMART_SECTION_ORDER: readonly AsanaSection[] = [
+export const SMART_SECTION_ORDER: readonly TaskTimeSection[] = [
   'overdue',
   'today',
   'upcoming',
@@ -24,7 +24,7 @@ export interface SmartSectionMeta {
   boardTopColor: string;
 }
 
-export const SMART_SECTION_META: Record<AsanaSection, SmartSectionMeta> = {
+export const SMART_SECTION_META: Record<TaskTimeSection, SmartSectionMeta> = {
   overdue: {
     listTitle: 'Overdue Action',
     listBadgeColor: 'text-rose-600',

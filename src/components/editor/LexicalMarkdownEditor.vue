@@ -1,20 +1,11 @@
 <script setup lang="ts">
-import { CodeHighlightNode, CodeNode } from '@lexical/code';
 import { createEmptyHistoryState, registerHistory } from '@lexical/history';
-import {
-  $isLinkNode,
-  $toggleLink,
-  AutoLinkNode,
-  LinkNode,
-  TOGGLE_LINK_COMMAND,
-} from '@lexical/link';
+import { $isLinkNode, $toggleLink, TOGGLE_LINK_COMMAND } from '@lexical/link';
 import {
   $isListNode,
   INSERT_CHECK_LIST_COMMAND,
   INSERT_ORDERED_LIST_COMMAND,
   INSERT_UNORDERED_LIST_COMMAND,
-  ListItemNode,
-  ListNode,
   registerCheckList,
   registerList,
 } from '@lexical/list';
@@ -29,20 +20,15 @@ import {
   $createQuoteNode,
   $isHeadingNode,
   $isQuoteNode,
-  HeadingNode,
-  QuoteNode,
   registerRichText,
 } from '@lexical/rich-text';
 import { $setBlocksType } from '@lexical/selection';
 import { mergeRegister } from '@lexical/utils';
 import {
   $createParagraphNode,
-  $createTextNode,
-  $getNodeByKey,
   $getRoot,
   $getSelection,
   $isRangeSelection,
-  $isTextNode,
   COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
   createEditor,
@@ -56,22 +42,19 @@ import {
   SELECTION_CHANGE_COMMAND,
   TextNode,
 } from 'lexical';
-import {
-  Bold,
-  CheckSquare,
-  Code,
-  Heading1,
-  Heading2,
-  Italic,
-  Link2,
-  List,
-  ListOrdered,
-  Quote,
-  Strikethrough,
-} from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { WorkspaceMember } from '@/types/domain';
-import { $createMentionNode, $isMentionNode, MentionNode } from './MentionNode';
+import EditorToolbar from './EditorToolbar.vue';
+import {
+  type ActiveFormats,
+  EDITOR_THEME,
+  INITIAL_ACTIVE_FORMATS,
+  LEXICAL_NODES,
+} from './lexicalConfig';
+import MentionDropdown from './MentionDropdown.vue';
+import { MentionNode } from './MentionNode';
+import MentionProfileTooltip from './MentionProfileTooltip.vue';
+import { useLexicalMentions } from './useLexicalMentions';
 
 const props = withDefaults(
   defineProps<{
@@ -106,59 +89,11 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLElement | null>(null);
 const editorRootRef = ref<HTMLDivElement | null>(null);
-const linkInputRef = ref<HTMLInputElement | null>(null);
+const toolbarRef = ref<InstanceType<typeof EditorToolbar> | null>(null);
 
 const isFocused = ref(false);
 const isEmpty = ref(true);
-const showLinkInput = ref(false);
-const linkUrl = ref('');
-
-interface MentionMatch {
-  query: string;
-  startOffset: number;
-  endOffset: number;
-  nodeKey: string;
-}
-
-const MENTION_TRIGGER_RE = /(?:^|\s)@([a-zA-Z0-9._-]*)$/;
-const MENTION_MATCH_RE = /(?:^|(?<=\s))@([a-zA-Z0-9._-]+)/g;
-const mentionMatch = ref<MentionMatch | null>(null);
-const mentionSelectedIndex = ref(0);
-const mentionCoords = ref<{ top: number; left: number }>({ top: 36, left: 12 });
-const activeMentionTooltip = ref<{ member: WorkspaceMember; top: number; left: number } | null>(
-  null,
-);
-
-const mentionMemberMap = computed(() => {
-  const map = new Map<string, WorkspaceMember>();
-  for (const member of props.mentionMembers) {
-    if (member.username) {
-      map.set(member.username.toLowerCase(), member);
-    }
-  }
-  return map;
-});
-
-const mentionSuggestions = computed(() => {
-  if (!mentionMatch.value || !props.editable || props.mentionMembers.length === 0) {
-    return [];
-  }
-  const q = mentionMatch.value.query.toLowerCase();
-  return props.mentionMembers
-    .filter(
-      (m) => m.username.toLowerCase().includes(q) || Boolean(m.fullName?.toLowerCase().includes(q)),
-    )
-    .slice(0, 8);
-});
-
-const activeFormats = ref({
-  bold: false,
-  italic: false,
-  strikethrough: false,
-  code: false,
-  link: false,
-  blockType: 'paragraph' as string,
-});
+const activeFormats = ref<ActiveFormats>({ ...INITIAL_ACTIVE_FORMATS });
 
 const surfaceClasses = computed(() => {
   if (props.borderless) {
@@ -175,33 +110,24 @@ let unregisterListeners: (() => void) | null = null;
 let isApplyingExternal = false;
 let lastEmittedMarkdown = props.modelValue || '';
 
-const EDITOR_THEME = {
-  paragraph: 'lexical-paragraph',
-  heading: {
-    h1: 'lexical-h1',
-    h2: 'lexical-h2',
-    h3: 'lexical-h3',
-  },
-  quote: 'lexical-quote',
-  list: {
-    ul: 'lexical-ul',
-    ol: 'lexical-ol',
-    listitem: 'lexical-li',
-    listitemChecked: 'lexical-li-checked',
-    listitemUnchecked: 'lexical-li-unchecked',
-    nested: {
-      listitem: 'lexical-nested-li',
-    },
-  },
-  text: {
-    bold: 'font-semibold',
-    italic: 'italic',
-    strikethrough: 'line-through',
-    code: 'lexical-inline-code',
-  },
-  code: 'lexical-code-block',
-  link: 'lexical-link',
-};
+const {
+  mentionMatch,
+  mentionSelectedIndex,
+  mentionCoords,
+  mentionSuggestions,
+  activeMentionTooltip,
+  updateMentionMatch,
+  selectMention,
+  transformTextNodeToMention,
+  transformMentionNodeIfInvalid,
+  handleMentionClick,
+  clearMentionState,
+} = useLexicalMentions({
+  containerRef,
+  getEditor: () => editor,
+  isEditable: () => props.editable,
+  getMembers: () => props.mentionMembers,
+});
 
 function computeIsEmpty(): boolean {
   const root = $getRoot();
@@ -237,143 +163,12 @@ function updateToolbarState() {
   };
 }
 
-function updateMentionPosition() {
-  const domSelection = window.getSelection();
-  const container = containerRef.value;
-  if (!domSelection || domSelection.rangeCount === 0 || !container) return;
-
-  const rect = domSelection.getRangeAt(0).getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0 && rect.top === 0 && rect.left === 0) return;
-
-  const containerRect = container.getBoundingClientRect();
-  const left = Math.max(8, Math.min(rect.left - containerRect.left, containerRect.width - 230));
-  const top = rect.bottom - containerRect.top + 4;
-  mentionCoords.value = { top, left };
-}
-
-function updateMentionMatch() {
-  if (!props.editable || props.mentionMembers.length === 0) {
-    mentionMatch.value = null;
-    return;
-  }
-
-  const selection = $getSelection();
-  if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
-    mentionMatch.value = null;
-    return;
-  }
-
-  const anchorNode = selection.anchor.getNode();
-  if (!$isTextNode(anchorNode)) {
-    mentionMatch.value = null;
-    return;
-  }
-
-  const textBeforeCaret = anchorNode.getTextContent().slice(0, selection.anchor.offset);
-  const match = textBeforeCaret.match(MENTION_TRIGGER_RE);
-  if (!match) {
-    mentionMatch.value = null;
-    return;
-  }
-
-  const query = match[1] ?? '';
-  const atIndex = textBeforeCaret.lastIndexOf('@');
-  const prevQuery = mentionMatch.value?.query;
-
-  mentionMatch.value = {
-    query,
-    startOffset: atIndex,
-    endOffset: selection.anchor.offset,
-    nodeKey: anchorNode.getKey(),
-  };
-
-  if (prevQuery !== query) {
-    mentionSelectedIndex.value = 0;
-  }
-  void nextTick(updateMentionPosition);
-}
-
-function selectMention(member: WorkspaceMember) {
-  if (!editor || !mentionMatch.value) return;
-  const activeMatch = mentionMatch.value;
-  mentionMatch.value = null;
-
-  editor.update(() => {
-    const node = $getNodeByKey(activeMatch.nodeKey);
-    if (!$isTextNode(node)) return;
-    const text = node.getTextContent();
-    const insertion = `@${member.username} `;
-    const nextText =
-      text.slice(0, activeMatch.startOffset) + insertion + text.slice(activeMatch.endOffset);
-    node.setTextContent(nextText);
-    const caretOffset = activeMatch.startOffset + insertion.length;
-    node.select(caretOffset, caretOffset);
-  });
-}
-
-function transformTextNodeToMention(node: TextNode) {
-  if ($isMentionNode(node) || !node.isSimpleText()) return;
-  if (node.getParent()?.getType() === 'code') return;
-
-  const text = node.getTextContent();
-  MENTION_MATCH_RE.lastIndex = 0;
-  let match: RegExpExecArray | null = MENTION_MATCH_RE.exec(text);
-  while (match !== null) {
-    const username = match[1];
-    const member = mentionMemberMap.value.get(username.toLowerCase());
-    if (member) {
-      const start = match.index;
-      const end = start + match[0].length;
-      const selection = $getSelection();
-      const wasCaretInside =
-        $isRangeSelection(selection) &&
-        selection.isCollapsed() &&
-        selection.anchor.key === node.getKey() &&
-        selection.anchor.offset >= start &&
-        selection.anchor.offset <= end;
-
-      const splitNodes = start === 0 ? node.splitText(end) : node.splitText(start, end);
-      const targetNode = start === 0 ? splitNodes[0] : splitNodes[1];
-      if (targetNode) {
-        const mentionNode = $createMentionNode(member.username, targetNode.getTextContent());
-        targetNode.replace(mentionNode);
-        if (wasCaretInside) {
-          const len = mentionNode.getTextContentSize();
-          mentionNode.select(len, len);
-        }
-      }
-      return;
-    }
-    match = MENTION_MATCH_RE.exec(text);
-  }
-}
-
-function transformMentionNodeIfInvalid(node: MentionNode) {
-  const text = node.getTextContent();
-  const match = text.match(/^@([a-zA-Z0-9._-]+)$/);
-  const member = match ? mentionMemberMap.value.get(match[1].toLowerCase()) : undefined;
-  if (!member) {
-    const selection = $getSelection();
-    const isSelected =
-      $isRangeSelection(selection) &&
-      selection.isCollapsed() &&
-      selection.anchor.key === node.getKey();
-    const offset = isSelected ? selection.anchor.offset : 0;
-    const textNode = $createTextNode(text);
-    node.replace(textNode);
-    if (isSelected) {
-      textNode.select(offset, offset);
-    }
-  }
-}
-
 function refreshMentionNodes() {
   if (!editor) return;
   isApplyingExternal = true;
   try {
     editor.update(() => {
-      const textNodes = $getRoot().getAllTextNodes();
-      for (const node of textNodes) {
+      for (const node of $getRoot().getAllTextNodes()) {
         node.markDirty();
       }
     });
@@ -404,17 +199,7 @@ onMounted(() => {
     namespace: 'WorkspaceHubLexicalMarkdown',
     editable: props.editable,
     theme: EDITOR_THEME,
-    nodes: [
-      HeadingNode,
-      QuoteNode,
-      ListNode,
-      ListItemNode,
-      CodeNode,
-      CodeHighlightNode,
-      LinkNode,
-      AutoLinkNode,
-      MentionNode,
-    ],
+    nodes: LEXICAL_NODES,
     onError(error: Error) {
       throw error;
     },
@@ -422,128 +207,133 @@ onMounted(() => {
 
   editor.setRootElement(rootEl);
 
-  unregisterListeners = mergeRegister(
-    registerRichText(editor),
-    registerHistory(editor, createEmptyHistoryState(), 300),
-    registerList(editor),
-    registerCheckList(editor),
-    registerMarkdownShortcuts(editor, TRANSFORMERS),
+  const registrations: Array<() => void> = [
     editor.registerNodeTransform(TextNode, transformTextNodeToMention),
     editor.registerNodeTransform(MentionNode, transformMentionNodeIfInvalid),
-    editor.registerCommand(
-      TOGGLE_LINK_COMMAND,
-      (payload) => {
-        if (typeof payload === 'string' || payload === null) {
-          $toggleLink(payload, { target: '_blank', rel: 'noopener noreferrer' });
-        }
-        return true;
-      },
-      COMMAND_PRIORITY_LOW,
-    ),
-    editor.registerCommand(
-      SELECTION_CHANGE_COMMAND,
-      () => {
-        updateToolbarState();
-        updateMentionMatch();
-        return false;
-      },
-      COMMAND_PRIORITY_LOW,
-    ),
-    editor.registerCommand(
-      KEY_ARROW_DOWN_COMMAND,
-      (event) => {
-        if (mentionSuggestions.value.length === 0) return false;
-        event?.preventDefault();
-        mentionSelectedIndex.value =
-          (mentionSelectedIndex.value + 1) % mentionSuggestions.value.length;
-        return true;
-      },
-      COMMAND_PRIORITY_HIGH,
-    ),
-    editor.registerCommand(
-      KEY_ARROW_UP_COMMAND,
-      (event) => {
-        if (mentionSuggestions.value.length === 0) return false;
-        event?.preventDefault();
-        mentionSelectedIndex.value =
-          (mentionSelectedIndex.value - 1 + mentionSuggestions.value.length) %
-          mentionSuggestions.value.length;
-        return true;
-      },
-      COMMAND_PRIORITY_HIGH,
-    ),
-    editor.registerCommand(
-      KEY_ENTER_COMMAND,
-      (event) => {
-        if (mentionSuggestions.value.length > 0) {
-          const chosen = mentionSuggestions.value[mentionSelectedIndex.value];
-          if (chosen) {
-            event?.preventDefault();
-            selectMention(chosen);
+  ];
+
+  // Skip heavy editing plugins and keyboard hooks for read-only markdown displays
+  if (props.editable) {
+    registrations.push(
+      registerRichText(editor),
+      registerHistory(editor, createEmptyHistoryState(), 300),
+      registerList(editor),
+      registerCheckList(editor),
+      registerMarkdownShortcuts(editor, TRANSFORMERS),
+      editor.registerCommand(
+        TOGGLE_LINK_COMMAND,
+        (payload) => {
+          if (typeof payload === 'string' || payload === null) {
+            $toggleLink(payload, { target: '_blank', rel: 'noopener noreferrer' });
+          }
+          return true;
+        },
+        COMMAND_PRIORITY_LOW,
+      ),
+      editor.registerCommand(
+        SELECTION_CHANGE_COMMAND,
+        () => {
+          updateToolbarState();
+          updateMentionMatch();
+          return false;
+        },
+        COMMAND_PRIORITY_LOW,
+      ),
+      editor.registerCommand(
+        KEY_ARROW_DOWN_COMMAND,
+        (event) => {
+          if (mentionSuggestions.value.length === 0) return false;
+          event?.preventDefault();
+          mentionSelectedIndex.value =
+            (mentionSelectedIndex.value + 1) % mentionSuggestions.value.length;
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ARROW_UP_COMMAND,
+        (event) => {
+          if (mentionSuggestions.value.length === 0) return false;
+          event?.preventDefault();
+          mentionSelectedIndex.value =
+            (mentionSelectedIndex.value - 1 + mentionSuggestions.value.length) %
+            mentionSuggestions.value.length;
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ENTER_COMMAND,
+        (event) => {
+          if (mentionSuggestions.value.length > 0) {
+            const chosen = mentionSuggestions.value[mentionSelectedIndex.value];
+            if (chosen) {
+              event?.preventDefault();
+              selectMention(chosen);
+              return true;
+            }
+          }
+          if (props.submitOnCtrlEnter && event && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            emit('submit');
             return true;
           }
-        }
-        if (props.submitOnCtrlEnter && event && (event.ctrlKey || event.metaKey)) {
+          return false;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_TAB_COMMAND,
+        (event) => {
+          if (mentionSuggestions.value.length === 0) return false;
+          const chosen = mentionSuggestions.value[mentionSelectedIndex.value];
+          if (!chosen) return false;
           event.preventDefault();
-          emit('submit');
+          selectMention(chosen);
           return true;
-        }
-        return false;
-      },
-      COMMAND_PRIORITY_HIGH,
-    ),
-    editor.registerCommand(
-      KEY_TAB_COMMAND,
-      (event) => {
-        if (mentionSuggestions.value.length === 0) return false;
-        const chosen = mentionSuggestions.value[mentionSelectedIndex.value];
-        if (!chosen) return false;
-        event.preventDefault();
-        selectMention(chosen);
-        return true;
-      },
-      COMMAND_PRIORITY_HIGH,
-    ),
-    editor.registerCommand(
-      KEY_ESCAPE_COMMAND,
-      () => {
-        if (activeMentionTooltip.value) {
-          activeMentionTooltip.value = null;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ESCAPE_COMMAND,
+        () => {
+          if (activeMentionTooltip.value) {
+            activeMentionTooltip.value = null;
+            return true;
+          }
+          if (!mentionMatch.value) return false;
+          clearMentionState();
           return true;
-        }
-        if (!mentionMatch.value) return false;
-        mentionMatch.value = null;
-        return true;
-      },
-      COMMAND_PRIORITY_HIGH,
-    ),
-    editor.registerUpdateListener(({ editorState, dirtyElements, dirtyLeaves }) => {
-      editorState.read(() => {
-        isEmpty.value = computeIsEmpty();
-        updateToolbarState();
-        updateMentionMatch();
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerUpdateListener(({ editorState, dirtyElements, dirtyLeaves }) => {
+        editorState.read(() => {
+          isEmpty.value = computeIsEmpty();
+          updateToolbarState();
+          updateMentionMatch();
 
-        if (isApplyingExternal || (dirtyElements.size === 0 && dirtyLeaves.size === 0)) {
-          return;
-        }
+          if (isApplyingExternal || (dirtyElements.size === 0 && dirtyLeaves.size === 0)) {
+            return;
+          }
 
-        const markdown = $convertToMarkdownString(TRANSFORMERS);
-        if (markdown !== lastEmittedMarkdown) {
-          lastEmittedMarkdown = markdown;
-          emit('update:modelValue', markdown);
-        }
-      });
-    }),
-  );
+          const markdown = $convertToMarkdownString(TRANSFORMERS);
+          if (markdown !== lastEmittedMarkdown) {
+            lastEmittedMarkdown = markdown;
+            emit('update:modelValue', markdown);
+          }
+        });
+      }),
+    );
+  }
 
+  unregisterListeners = mergeRegister(...registrations);
   rootEl.addEventListener('click', handleEditorClick);
-  document.addEventListener('pointerdown', handleDocumentPointerDown);
   applyMarkdownToEditor(props.modelValue || '');
 });
 
 onBeforeUnmount(() => {
   editorRootRef.value?.removeEventListener('click', handleEditorClick);
-  document.removeEventListener('pointerdown', handleDocumentPointerDown);
   unregisterListeners?.();
   unregisterListeners = null;
   editor?.setRootElement(null);
@@ -585,11 +375,9 @@ function toggleHeading(tag: 'h1' | 'h2') {
   editor.update(() => {
     const selection = $getSelection();
     if (!$isRangeSelection(selection)) return;
-    if (activeFormats.value.blockType === tag) {
-      $setBlocksType(selection, () => $createParagraphNode());
-    } else {
-      $setBlocksType(selection, () => $createHeadingNode(tag));
-    }
+    $setBlocksType(selection, () =>
+      activeFormats.value.blockType === tag ? $createParagraphNode() : $createHeadingNode(tag),
+    );
   });
 }
 
@@ -601,11 +389,9 @@ function toggleQuote() {
     const anchorNode = selection.anchor.getNode();
     const element =
       anchorNode.getKey() === 'root' ? anchorNode : anchorNode.getTopLevelElementOrThrow();
-    if ($isQuoteNode(element)) {
-      $setBlocksType(selection, () => $createParagraphNode());
-    } else {
-      $setBlocksType(selection, () => $createQuoteNode());
-    }
+    $setBlocksType(selection, () =>
+      $isQuoteNode(element) ? $createParagraphNode() : $createQuoteNode(),
+    );
   });
 }
 
@@ -620,67 +406,22 @@ function toggleList(type: 'bullet' | 'number' | 'check') {
   }
 }
 
-function openLinkEditor() {
+function handleApplyLink(url: string | null) {
   if (!editor || !props.editable) return;
-  if (activeFormats.value.link) {
-    editor.dispatchCommand(TOGGLE_LINK_COMMAND, null);
-    showLinkInput.value = false;
-    return;
-  }
-  linkUrl.value = 'https://';
-  showLinkInput.value = true;
-  void nextTick().then(() => {
-    linkInputRef.value?.focus();
-    linkInputRef.value?.select();
-  });
-}
-
-function applyLink() {
-  if (!editor) return;
-  const trimmed = linkUrl.value.trim();
-  if (trimmed && trimmed !== 'https://') {
-    editor.dispatchCommand(TOGGLE_LINK_COMMAND, trimmed);
-  }
-  showLinkInput.value = false;
+  editor.dispatchCommand(TOGGLE_LINK_COMMAND, url);
   editorRootRef.value?.focus();
 }
 
 function handleEditorClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null;
-  const mentionEl = target?.closest<HTMLElement>('.lexical-mention[data-mention-username]');
-  if (mentionEl) {
-    const username = mentionEl.dataset.mentionUsername;
-    const member = username ? mentionMemberMap.value.get(username.toLowerCase()) : undefined;
-    const container = containerRef.value;
-    if (member && container) {
-      const rect = mentionEl.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const left = Math.max(8, Math.min(rect.left - containerRect.left, containerRect.width - 240));
-      const top = rect.bottom - containerRect.top + 6;
-      activeMentionTooltip.value = { member, top, left };
-      return;
-    }
-  }
+  if (handleMentionClick(target)) return;
 
-  activeMentionTooltip.value = null;
   const anchor = target?.closest('a');
   if (!anchor?.href) return;
   if (!props.editable || event.metaKey || event.ctrlKey) {
     event.preventDefault();
     window.open(anchor.href, '_blank', 'noopener,noreferrer');
   }
-}
-
-function handleDocumentPointerDown(event: PointerEvent) {
-  if (!activeMentionTooltip.value) return;
-  const target = event.target as Node | null;
-  if (target && containerRef.value?.contains(target)) {
-    const el = target instanceof HTMLElement ? target : target.parentElement;
-    if (el?.closest('.lexical-mention') || el?.closest('[role="tooltip"]')) {
-      return;
-    }
-  }
-  activeMentionTooltip.value = null;
 }
 
 function handleFocusIn() {
@@ -693,8 +434,8 @@ function handleFocusOut(event: FocusEvent) {
     return;
   }
   isFocused.value = false;
-  showLinkInput.value = false;
-  mentionMatch.value = null;
+  toolbarRef.value?.closeLinkInput();
+  clearMentionState();
   emit('blur');
 }
 </script>
@@ -718,176 +459,16 @@ function handleFocusOut(event: FocusEvent) {
     @focusin="handleFocusIn"
     @focusout="handleFocusOut"
   >
-    <!-- Compact Markdown Toolbar -->
-    <div
+    <EditorToolbar
       v-if="editable"
-      class="flex items-center justify-between gap-1 px-2 py-1 border-b border-gray-200/80 bg-gray-50/90 rounded-t-lg flex-wrap"
-    >
-      <div class="flex items-center gap-0.5 flex-wrap">
-        <button
-          type="button"
-          title="Bold (**text**)"
-          @mousedown.prevent="formatText('bold')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.bold ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Bold class="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Italic (*text*)"
-          @mousedown.prevent="formatText('italic')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.italic ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Italic class="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Strikethrough (~~text~~)"
-          @mousedown.prevent="formatText('strikethrough')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.strikethrough ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Strikethrough class="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Inline code (`code`)"
-          @mousedown.prevent="formatText('code')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.code ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Code class="w-3.5 h-3.5" />
-        </button>
-
-        <span class="w-px h-3.5 bg-gray-200 mx-1" />
-
-        <button
-          type="button"
-          title="Heading 1 (# )"
-          @mousedown.prevent="toggleHeading('h1')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.blockType === 'h1' ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Heading1 class="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Heading 2 (## )"
-          @mousedown.prevent="toggleHeading('h2')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.blockType === 'h2' ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Heading2 class="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Quote (> )"
-          @mousedown.prevent="toggleQuote"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.blockType === 'quote' ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Quote class="w-3.5 h-3.5" />
-        </button>
-
-        <span class="w-px h-3.5 bg-gray-200 mx-1" />
-
-        <button
-          type="button"
-          title="Bullet list (- )"
-          @mousedown.prevent="toggleList('bullet')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.blockType === 'bullet' ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <List class="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Numbered list (1. )"
-          @mousedown.prevent="toggleList('number')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.blockType === 'number' ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <ListOrdered class="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Checklist (- [ ] )"
-          @mousedown.prevent="toggleList('check')"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.blockType === 'check' ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <CheckSquare class="w-3.5 h-3.5" />
-        </button>
-
-        <span class="w-px h-3.5 bg-gray-200 mx-1" />
-
-        <button
-          type="button"
-          :title="activeFormats.link ? 'Remove link' : 'Insert link'"
-          @mousedown.prevent="openLinkEditor"
-          :class="[
-            'p-1 rounded text-gray-600 hover:bg-gray-200/70 transition-colors',
-            activeFormats.link ? 'bg-indigo-100 text-modern-primary' : '',
-          ]"
-        >
-          <Link2 class="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <span class="text-[10px] font-medium text-gray-400 px-1 select-none">MD</span>
-    </div>
-
-    <!-- Inline Link URL Popover -->
-    <div
-      v-if="showLinkInput && editable"
-      class="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50/70 border-b border-indigo-100"
-    >
-      <input
-        ref="linkInputRef"
-        v-model="linkUrl"
-        type="url"
-        placeholder="https://example.com"
-        class="flex-1 px-2 py-1 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-modern-primary"
-        @keydown.enter.prevent="applyLink"
-        @keydown.escape.prevent="showLinkInput = false"
-      >
-      <button
-        type="button"
-        class="px-2 py-1 text-[11px] font-medium bg-modern-primary text-white rounded hover:bg-modern-hover"
-        @mousedown.prevent="applyLink"
-      >
-        Apply
-      </button>
-      <button
-        type="button"
-        class="px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-200/60 rounded"
-        @mousedown.prevent="showLinkInput = false"
-      >
-        Cancel
-      </button>
-    </div>
+      ref="toolbarRef"
+      :active-formats="activeFormats"
+      @format-text="formatText"
+      @toggle-heading="toggleHeading"
+      @toggle-quote="toggleQuote"
+      @toggle-list="toggleList"
+      @apply-link="handleApplyLink"
+    />
 
     <!-- Lexical ContentEditable Surface -->
     <div class="relative">
@@ -912,82 +493,15 @@ function handleFocusOut(event: FocusEvent) {
       />
     </div>
 
-    <!-- @mention Suggestions Dropdown -->
-    <div
-      v-if="mentionSuggestions.length > 0"
-      role="listbox"
-      aria-label="Mention suggestions"
-      :style="{ top: `${mentionCoords.top}px`, left: `${mentionCoords.left}px` }"
-      class="absolute z-40 w-56 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto"
-    >
-      <button
-        v-for="(member, idx) in mentionSuggestions"
-        :key="member.id"
-        type="button"
-        role="option"
-        :aria-selected="idx === mentionSelectedIndex"
-        @mousedown.prevent="selectMention(member)"
-        @mouseenter="mentionSelectedIndex = idx"
-        :class="[
-          'w-full px-2.5 py-1.5 flex items-center gap-2 text-left text-xs transition-colors',
-          idx === mentionSelectedIndex
-            ? 'bg-indigo-50 text-modern-primary'
-            : 'text-gray-700 hover:bg-gray-50',
-        ]"
-      >
-        <img
-          v-if="member.avatarUrl"
-          :src="member.avatarUrl"
-          :alt="member.fullName"
-          class="w-5 h-5 rounded-full object-cover shrink-0"
-        >
-        <span
-          v-else
-          class="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-semibold flex items-center justify-center shrink-0"
-        >
-          {{ member.initials || member.username.slice(0, 2).toUpperCase() }}
-        </span>
-        <div class="min-w-0 flex-1">
-          <div class="font-medium truncate leading-tight">{{ member.fullName }}</div>
-          <div class="text-[10px] text-gray-400 truncate">@{{ member.username }}</div>
-        </div>
-      </button>
-    </div>
+    <MentionDropdown
+      :suggestions="mentionSuggestions"
+      :selected-index="mentionSelectedIndex"
+      :coords="mentionCoords"
+      @select="selectMention"
+      @hover-index="mentionSelectedIndex = $event"
+    />
 
-    <!-- User Profile Tooltip on Mention Click -->
-    <div
-      v-if="activeMentionTooltip"
-      role="tooltip"
-      :style="{ top: `${activeMentionTooltip.top}px`, left: `${activeMentionTooltip.left}px` }"
-      class="absolute z-40 w-60 bg-white border border-gray-200 rounded-xl shadow-xl p-3 flex items-center gap-2.5"
-    >
-      <img
-        v-if="activeMentionTooltip.member.avatarUrl"
-        :src="activeMentionTooltip.member.avatarUrl"
-        :alt="activeMentionTooltip.member.fullName"
-        class="w-9 h-9 rounded-full object-cover shrink-0 border border-gray-200"
-      >
-      <span
-        v-else
-        class="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0"
-      >
-        {{
-          activeMentionTooltip.member.initials ||
-          activeMentionTooltip.member.username.slice(0, 2).toUpperCase()
-        }}
-      </span>
-      <div class="min-w-0 flex-1">
-        <div class="text-xs font-semibold text-gray-900 truncate">
-          {{ activeMentionTooltip.member.fullName }}
-        </div>
-        <div class="text-[11px] text-modern-primary font-medium truncate">
-          @{{ activeMentionTooltip.member.username }}
-        </div>
-        <div class="text-[10px] text-gray-400 font-mono truncate mt-0.5">
-          ID: {{ activeMentionTooltip.member.id }}
-        </div>
-      </div>
-    </div>
+    <MentionProfileTooltip :tooltip="activeMentionTooltip" />
   </div>
 </template>
 

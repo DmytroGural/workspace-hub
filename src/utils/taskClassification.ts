@@ -1,12 +1,12 @@
 import { DateTime } from 'luxon';
-import type { AsanaSection } from '@/types/domain';
+import type { TaskTimeSection } from '@/types/domain';
 import { parseIsoDate } from './dateUtils';
 
 /**
- * Classifies a task into an Asana smart section based on due date and completion state.
+ * Classifies a task into a smart time section based on due date and completion state.
  * Shared across all provider connectors.
  */
-export function classifyAsanaSection(due: string | null, dueComplete: boolean): AsanaSection {
+export function classifyTaskSection(due: string | null, dueComplete: boolean): TaskTimeSection {
   if (dueComplete) return 'completed';
   const dueDt = parseIsoDate(due);
   if (!dueDt) return 'later';

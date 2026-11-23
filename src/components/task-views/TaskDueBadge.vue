@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { AlertCircle, Calendar } from 'lucide-vue-next';
 import { computed } from 'vue';
-import type { AsanaSection } from '@/types/domain';
+import type { TaskTimeSection } from '@/types/domain';
 import { formatShortDueDate } from '@/utils/dateUtils';
 import { getTaskDueTone, type TaskDueTone } from '@/utils/taskPresentation';
 
@@ -9,7 +9,7 @@ const props = withDefaults(
   defineProps<{
     due: string | null;
     dueComplete: boolean;
-    section: AsanaSection;
+    section: TaskTimeSection;
     variant?: 'pill' | 'inline';
     emptyText?: string;
   }>(),

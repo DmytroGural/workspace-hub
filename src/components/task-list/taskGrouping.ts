@@ -1,6 +1,6 @@
 import type { BoardList, TaskInterface } from '@/types/domain';
 import { getLabelDisplayName } from '@/utils/labelColors';
-import { SMART_SECTION_META, SMART_SECTION_ORDER } from '@/utils/taskGrouping';
+import { SMART_SECTION_META, SMART_SECTION_ORDER } from '@/utils/taskSections';
 import type { TaskListGroup, TaskListGroupBy } from './types';
 
 function groupByList(

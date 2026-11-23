@@ -1,18 +1,6 @@
-import {
-  filter,
-  find,
-  flatMap,
-  intersection,
-  keyBy,
-  map,
-  reject,
-  some,
-  sortBy,
-  uniq,
-  uniqBy,
-} from 'lodash-es';
 import { defineStore } from 'pinia';
-import { computed, type Ref, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
+import { celebrationService } from '@/services/CelebrationService';
 import { taskService } from '@/services/TaskService';
 import type { CreateTaskInput } from '@/types/api';
 import type {
@@ -35,6 +23,10 @@ export const DEFAULT_FALLBACK_USER: WorkspaceMember = {
   initials: 'WU',
 };
 
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
 /**
  * Generic deduplicator that merges multi-account access (`accountIds`) for entities sharing the same ID.
  */
@@ -47,10 +39,12 @@ export function deduplicateEntity<
     if (!existing) {
       entityMap.set(item.id, {
         ...item,
-        accountIds: uniq(item.accountIds ? [...item.accountIds, item.accountId] : [item.accountId]),
+        accountIds: uniqueStrings(
+          item.accountIds ? [...item.accountIds, item.accountId] : [item.accountId],
+        ),
       });
     } else {
-      existing.accountIds = uniq([
+      existing.accountIds = uniqueStrings([
         ...(existing.accountIds || [existing.accountId]),
         item.accountId,
         ...(item.accountIds || []),
@@ -90,81 +84,51 @@ export const useTasksStore = defineStore('tasks', () => {
 
   let latestTaskRefreshSeq = 0;
 
-  // Enforce entity uniqueness across reactive updates
-  function syncUniqueRef<T extends { id: string; accountId: string; accountIds?: string[] }>(
-    refTarget: Ref<T[]>,
-  ) {
-    const unique = deduplicateEntity(refTarget.value);
-    if (unique.length !== refTarget.value.length) {
-      refTarget.value = unique;
-    }
-  }
-
-  watch(boards, () => syncUniqueRef(boards), { deep: false });
-  watch(lists, () => syncUniqueRef(lists), { deep: false });
-  watch(tasks, () => syncUniqueRef(tasks), { deep: false });
-
   // Getters
   const selectedTask = computed(() => {
     if (!selectedTaskId.value) return null;
-    return find(tasks.value, { id: selectedTaskId.value }) || null;
+    return tasks.value.find((t) => t.id === selectedTaskId.value) || null;
   });
 
-  const availableLabels = computed(() =>
-    sortBy(
-      uniqBy(
-        flatMap(tasks.value, (t) =>
-          map(t.labels, (l) => ({ name: getLabelDisplayName(l), color: l.color })),
-        ),
-        'name',
-      ),
-      (l) => l.name.toLowerCase(),
-    ),
-  );
+  const availableLabels = computed(() => {
+    const seen = new Map<string, { name: string; color: string }>();
+    for (const task of tasks.value) {
+      for (const label of task.labels) {
+        const name = getLabelDisplayName(label);
+        if (!seen.has(name)) {
+          seen.set(name, { name, color: label.color });
+        }
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+    );
+  });
 
   // Internal domain helpers
   function findTask(taskId: string): TaskInterface | undefined {
-    return find(tasks.value, { id: taskId });
+    return tasks.value.find((t) => t.id === taskId);
   }
 
   function findBoard(boardId: string): TaskBoard | undefined {
-    return find(boards.value, { id: boardId });
+    return boards.value.find((b) => b.id === boardId);
   }
 
   function resolveAccountForBoard(board?: TaskBoard): ProviderAccount | undefined {
-    if (!board) {
-      return find(accountsStore.accounts, 'enabled') || accountsStore.accounts[0];
-    }
-    let acc = accountsStore.findAccount(board.accountId);
-    if (!acc?.enabled && board.accountIds) {
-      acc = find(
-        accountsStore.accounts,
-        (a) => a.enabled && Boolean(board.accountIds?.includes(a.id)),
-      );
-    }
-    return (
-      acc || accountsStore.findAccount(board.accountId) || find(accountsStore.accounts, 'enabled')
-    );
+    return accountsStore.resolveAccountForEntity(board, { fallbackToAnyEnabled: true });
   }
 
   function resolveAccountForTask(task: TaskInterface): ProviderAccount | undefined {
-    let acc = accountsStore.findAccount(task.accountId);
-    if (!acc?.enabled && task.accountIds) {
-      acc = find(
-        accountsStore.accounts,
-        (a) => a.enabled && Boolean(task.accountIds?.includes(a.id)),
-      );
-    }
-    return acc || accountsStore.findAccount(task.accountId);
+    return accountsStore.resolveAccountForEntity(task);
   }
 
   function notifySyncError(msg: string) {
-    useSyncStore().errorMessage = msg;
+    useSyncStore().setError(msg);
   }
 
   function appendBoardLabel(boardId: string, label: TaskLabel) {
     const current = boardLabelsMap.value[boardId] || [];
-    if (!some(current, { id: label.id })) {
+    if (!current.some((l) => l.id === label.id)) {
       boardLabelsMap.value = {
         ...boardLabelsMap.value,
         [boardId]: [...current, label],
@@ -173,7 +137,7 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   function removeTaskFromWorkspace(taskId: string) {
-    tasks.value = reject(tasks.value, { id: taskId });
+    tasks.value = tasks.value.filter((t) => t.id !== taskId);
     if (selectedTaskId.value === taskId) {
       selectedTaskId.value = null;
     }
@@ -182,7 +146,7 @@ export const useTasksStore = defineStore('tasks', () => {
   // Task Actions
   async function createTask(input: CreateTaskInput) {
     const targetBoard = findBoard(input.idBoard);
-    const targetList = find(lists.value, { id: input.idList });
+    const targetList = lists.value.find((l) => l.id === input.idList);
     const targetAccount = resolveAccountForBoard(targetBoard);
 
     try {
@@ -193,7 +157,7 @@ export const useTasksStore = defineStore('tasks', () => {
         targetAccount,
         accountsStore.currentUser || DEFAULT_FALLBACK_USER,
       );
-      tasks.value.unshift(created);
+      setTasks([created, ...tasks.value]);
       return created;
     } catch (err: unknown) {
       const msg = `Failed to create task (${targetAccount?.label || 'Workspace'}): ${getErrorMessage(err, 'Task creation failed')}`;
@@ -218,7 +182,10 @@ export const useTasksStore = defineStore('tasks', () => {
   async function toggleTaskComplete(task: TaskInterface) {
     const account = resolveAccountForTask(task);
     try {
-      await taskService.toggleTaskComplete(task, account);
+      const isNowComplete = await taskService.toggleTaskComplete(task, account);
+      if (isNowComplete) {
+        celebrationService.triggerTaskComplete();
+      }
     } catch (err: unknown) {
       notifySyncError(
         `Failed to sync (${task.accountLabel}): ${getErrorMessage(err, 'Sync failed')}`,
@@ -270,7 +237,10 @@ export const useTasksStore = defineStore('tasks', () => {
       if (!result) return;
 
       if (result.updatedLists) {
-        setLists([...reject(lists.value, { idBoard: task.idBoard }), ...result.updatedLists]);
+        setLists([
+          ...lists.value.filter((l) => l.idBoard !== task.idBoard),
+          ...result.updatedLists,
+        ]);
       }
 
       const currentTask = findTask(taskId);
@@ -298,8 +268,10 @@ export const useTasksStore = defineStore('tasks', () => {
     const account = resolveAccountForTask(task);
     try {
       await taskService.toggleCheckItem(task, checklistId, itemId, account);
-    } catch {
-      // Ignore checklist toggle errors
+    } catch (err: unknown) {
+      notifySyncError(
+        `Failed to update subtask (${task.accountLabel}): ${getErrorMessage(err, 'Update failed')}`,
+      );
     }
   }
 
@@ -489,7 +461,7 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  // Setters & State reset
+  // Setters & State synchronization
   function setBoards(incoming: TaskBoard[]) {
     boards.value = deduplicateBoards(incoming);
   }
@@ -502,25 +474,42 @@ export const useTasksStore = defineStore('tasks', () => {
     tasks.value = deduplicateTasks(incoming);
   }
 
+  function updateAccountMetadata(accountId: string, label: string, color: string) {
+    for (const board of boards.value) {
+      if (board.accountId === accountId) {
+        board.accountLabel = label;
+        board.accountColor = color;
+      }
+    }
+    for (const task of tasks.value) {
+      if (task.accountId === accountId) {
+        task.accountLabel = label;
+        task.accountColor = color;
+      }
+    }
+  }
+
   function syncEntitiesWithAccounts(
     accounts: ProviderAccount[],
     source?: { boards: TaskBoard[]; lists: BoardList[]; tasks: TaskInterface[] },
   ) {
-    const accountById = keyBy(accounts, 'id');
-    const enabledIds = map(filter(accounts, 'enabled'), 'id');
+    const accountById = new Map(accounts.map((a) => [a.id, a]));
+    const enabledIdSet = new Set(accounts.filter((a) => a.enabled).map((a) => a.id));
 
     const sourceBoards = source?.boards ?? boards.value;
     const sourceLists = source?.lists ?? lists.value;
     const sourceTasks = source?.tasks ?? tasks.value;
 
     setBoards(
-      filter(
-        map(sourceBoards, (board) => {
-          const activeAccIds = intersection(board.accountIds || [board.accountId], enabledIds);
-          const primaryId = enabledIds.includes(board.accountId)
+      sourceBoards
+        .map((board) => {
+          const activeAccIds = (board.accountIds || [board.accountId]).filter((id) =>
+            enabledIdSet.has(id),
+          );
+          const primaryId = enabledIdSet.has(board.accountId)
             ? board.accountId
             : activeAccIds[0] || board.accountId;
-          const owner = accountById[primaryId];
+          const owner = accountById.get(primaryId);
           return {
             ...board,
             accountId: primaryId,
@@ -528,16 +517,17 @@ export const useTasksStore = defineStore('tasks', () => {
             accountLabel: owner?.label || board.accountLabel,
             accountColor: owner?.color || board.accountColor,
           };
-        }),
-        (b) => b.accountIds.length > 0,
-      ),
+        })
+        .filter((b) => b.accountIds.length > 0),
     );
 
     setLists(
-      filter(
-        map(sourceLists, (list) => {
-          const activeAccIds = intersection(list.accountIds || [list.accountId], enabledIds);
-          const primaryId = enabledIds.includes(list.accountId)
+      sourceLists
+        .map((list) => {
+          const activeAccIds = (list.accountIds || [list.accountId]).filter((id) =>
+            enabledIdSet.has(id),
+          );
+          const primaryId = enabledIdSet.has(list.accountId)
             ? list.accountId
             : activeAccIds[0] || list.accountId;
           return {
@@ -545,19 +535,20 @@ export const useTasksStore = defineStore('tasks', () => {
             accountId: primaryId,
             accountIds: activeAccIds,
           };
-        }),
-        (l) => l.accountIds.length > 0,
-      ),
+        })
+        .filter((l) => l.accountIds.length > 0),
     );
 
     setTasks(
-      filter(
-        map(sourceTasks, (task) => {
-          const activeAccIds = intersection(task.accountIds || [task.accountId], enabledIds);
-          const primaryId = enabledIds.includes(task.accountId)
+      sourceTasks
+        .map((task) => {
+          const activeAccIds = (task.accountIds || [task.accountId]).filter((id) =>
+            enabledIdSet.has(id),
+          );
+          const primaryId = enabledIdSet.has(task.accountId)
             ? task.accountId
             : activeAccIds[0] || task.accountId;
-          const owner = accountById[primaryId];
+          const owner = accountById.get(primaryId);
           return {
             ...task,
             accountId: primaryId,
@@ -565,9 +556,8 @@ export const useTasksStore = defineStore('tasks', () => {
             accountLabel: owner?.label || task.accountLabel,
             accountColor: owner?.color || task.accountColor,
           };
-        }),
-        (t) => t.accountIds.length > 0,
-      ),
+        })
+        .filter((t) => t.accountIds.length > 0),
     );
   }
 
@@ -587,6 +577,7 @@ export const useTasksStore = defineStore('tasks', () => {
     setBoards,
     setLists,
     setTasks,
+    updateAccountMetadata,
     syncEntitiesWithAccounts,
     selectedTaskId,
     selectedTask,

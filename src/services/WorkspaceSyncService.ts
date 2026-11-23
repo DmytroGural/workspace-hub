@@ -1,4 +1,3 @@
-import { compact, filter, map, uniq } from 'lodash-es';
 import { connectorRegistry } from '@/connectors';
 import type { SyncProgressCallback, WorkspaceSyncResult } from '@/types/api';
 import type { BoardList, ProviderAccount, TaskBoard, TaskInterface } from '@/types/domain';
@@ -9,7 +8,8 @@ function appendUniqueAccountId(
   entity: { accountId: string; accountIds?: string[] },
   accountId: string,
 ): void {
-  entity.accountIds = uniq([...(entity.accountIds || [entity.accountId]), accountId]);
+  const current = entity.accountIds || [entity.accountId];
+  entity.accountIds = current.includes(accountId) ? current : [...current, accountId];
 }
 
 function mergeAccountEntity<T extends { id: string; accountId: string; accountIds?: string[] }>(
@@ -41,9 +41,9 @@ export class WorkspaceSyncService {
     const disabledWorkspaceNames = new Set<string>();
     const enabledWorkspaceNames = new Set<string>();
     for (const acc of accounts) {
-      const names = compact(
-        map([acc.workspaceName, acc.label], (s) => (s || '').trim().toLowerCase()),
-      );
+      const names = [acc.workspaceName, acc.label]
+        .map((s) => (s || '').trim().toLowerCase())
+        .filter(Boolean);
       for (const n of names) {
         if (acc.enabled) {
           enabledWorkspaceNames.add(n);
@@ -80,7 +80,7 @@ export class WorkspaceSyncService {
           continue;
         }
 
-        const allowedBoards = filter(payload.boards, (b) => {
+        const allowedBoards = payload.boards.filter((b) => {
           const wsName = (b.workspaceName || '').trim().toLowerCase();
           const wsId = (b.workspaceId || '').trim().toLowerCase();
           if (
@@ -92,9 +92,11 @@ export class WorkspaceSyncService {
           return true;
         });
 
-        const allowedBoardIds = new Set(map(allowedBoards, 'id'));
+        const allowedBoardIds = new Set(allowedBoards.map((b) => b.id));
         if (allowedBoards.length > 0 && !acc.workspaceName) {
-          const uniqueWs = uniq(compact(map(allowedBoards, 'workspaceName')));
+          const uniqueWs = Array.from(
+            new Set(allowedBoards.map((b) => b.workspaceName).filter(Boolean) as string[]),
+          );
           if (uniqueWs.length === 1) {
             acc.workspaceName = uniqueWs[0];
           }

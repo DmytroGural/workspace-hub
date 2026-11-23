@@ -1,4 +1,3 @@
-import { compact, filter, find, map, reject, some, uniq } from 'lodash-es';
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { ACCOUNT_COLORS, accountService } from '@/services/AccountService';
@@ -14,56 +13,85 @@ export { ACCOUNT_COLORS };
 export const useAccountsStore = defineStore('accounts', () => {
   const accounts = ref<ProviderAccount[]>(accountService.getInitialAccounts());
   const currentUser = ref<WorkspaceMember | null>(
-    find(accounts.value, (a) => a.enabled && Boolean(a.member))?.member || null,
+    accounts.value.find((a) => a.enabled && Boolean(a.member))?.member || null,
   );
 
   const hasAccounts = computed(() => accounts.value.length > 0);
   const liveAccounts = computed(() => accounts.value);
-  const enabledAccounts = computed(() => filter(accounts.value, 'enabled'));
+  const enabledAccounts = computed(() => accounts.value.filter((a) => a.enabled));
   const isLiveConnected = computed(() =>
-    some(accounts.value, { enabled: true, status: 'connected' }),
+    accounts.value.some((a) => a.enabled && a.status === 'connected'),
   );
 
-  const myMemberIds = computed(
-    () =>
-      new Set(
-        uniq(compact([currentUser.value?.id, ...map(enabledAccounts.value, (a) => a.member?.id)])),
-      ),
-  );
+  const myMemberIds = computed(() => {
+    const ids = new Set<string>();
+    if (currentUser.value?.id) ids.add(currentUser.value.id);
+    for (const acc of enabledAccounts.value) {
+      if (acc.member?.id) ids.add(acc.member.id);
+    }
+    return ids;
+  });
 
-  const myUsernames = computed(
-    () =>
-      new Set(
-        uniq(
-          compact([
-            currentUser.value?.username,
-            ...map(enabledAccounts.value, (a) => a.member?.username),
-          ]),
-        ),
-      ),
-  );
+  const myUsernames = computed(() => {
+    const names = new Set<string>();
+    if (currentUser.value?.username) names.add(currentUser.value.username);
+    for (const acc of enabledAccounts.value) {
+      if (acc.member?.username) names.add(acc.member.username);
+    }
+    return names;
+  });
 
   function findAccount(accountId: string): ProviderAccount | undefined {
-    return find(accounts.value, { id: accountId });
+    return accounts.value.find((a) => a.id === accountId);
+  }
+
+  /**
+   * Resolves the best matching account for a multi-account entity (board, list, or task).
+   */
+  function resolveAccountForEntity(
+    entity?: { accountId: string; accountIds?: string[] },
+    options: { enabledOnly?: boolean; fallbackToAnyEnabled?: boolean } = {},
+  ): ProviderAccount | undefined {
+    const { enabledOnly = false, fallbackToAnyEnabled = false } = options;
+
+    if (!entity) {
+      return fallbackToAnyEnabled
+        ? accounts.value.find((a) => a.enabled) || accounts.value[0]
+        : undefined;
+    }
+
+    let acc = findAccount(entity.accountId);
+    if (!acc?.enabled && entity.accountIds) {
+      acc = accounts.value.find((a) => a.enabled && Boolean(entity.accountIds?.includes(a.id)));
+    }
+
+    if (enabledOnly) {
+      return acc?.enabled ? acc : undefined;
+    }
+
+    return (
+      acc ||
+      findAccount(entity.accountId) ||
+      (fallbackToAnyEnabled ? accounts.value.find((a) => a.enabled) : undefined)
+    );
   }
 
   async function addAccount(input: AddAccountInput): Promise<ProviderAccount> {
     const syncStore = useSyncStore();
-    syncStore.isLoading = true;
-    syncStore.errorMessage = null;
+    syncStore.clearError();
 
-    try {
-      const newAcc = await accountService.verifyAndCreateLiveAccount(accounts.value, input);
-      accounts.value = [...accounts.value, newAcc];
-      accountService.persist(accounts.value);
-      await syncStore.syncAllAccounts();
-      return newAcc;
-    } catch (err: unknown) {
-      syncStore.errorMessage = getErrorMessage(err, 'Could not authenticate provider account');
-      throw err;
-    } finally {
-      syncStore.isLoading = false;
-    }
+    return syncStore.runWithSyncIndicator(async () => {
+      try {
+        const newAcc = await accountService.verifyAndCreateLiveAccount(accounts.value, input);
+        accounts.value = [...accounts.value, newAcc];
+        accountService.persist(accounts.value);
+        await syncStore.syncAllAccounts();
+        return newAcc;
+      } catch (err: unknown) {
+        syncStore.setError(getErrorMessage(err, 'Could not authenticate provider account'));
+        throw err;
+      }
+    });
   }
 
   async function updateAccount(
@@ -113,19 +141,7 @@ export const useAccountsStore = defineStore('accounts', () => {
 
     accounts.value = [...accounts.value];
     accountService.persist(accounts.value);
-
-    for (const board of tasksStore.boards) {
-      if (board.accountId === accountId) {
-        board.accountLabel = nextLabel;
-        board.accountColor = nextColor;
-      }
-    }
-    for (const task of tasksStore.tasks) {
-      if (task.accountId === accountId) {
-        task.accountLabel = nextLabel;
-        task.accountColor = nextColor;
-      }
-    }
+    tasksStore.updateAccountMetadata(accountId, nextLabel, nextColor);
 
     if (credsChanged || updates.enabled !== undefined) {
       await syncStore.syncAllAccounts(true);
@@ -154,7 +170,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     if (!nextEnabled) {
       tasksStore.syncEntitiesWithAccounts(accounts.value);
       currentUser.value =
-        find(accounts.value, (a) => a.enabled && Boolean(a.member))?.member || null;
+        accounts.value.find((a) => a.enabled && Boolean(a.member))?.member || null;
     }
 
     await syncStore.syncAllAccounts(true);
@@ -164,7 +180,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     const filtersStore = useFiltersStore();
     const syncStore = useSyncStore();
 
-    accounts.value = reject(accounts.value, { id: accountId });
+    accounts.value = accounts.value.filter((a) => a.id !== accountId);
     if (filtersStore.selectedAccountId === accountId) {
       filtersStore.selectedAccountId = null;
     }
@@ -189,7 +205,7 @@ export const useAccountsStore = defineStore('accounts', () => {
 
     tasksStore.clearTasksState();
     filtersStore.resetFilters();
-    syncStore.errorMessage = null;
+    syncStore.clearError();
   }
 
   return {
@@ -202,6 +218,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     myMemberIds,
     myUsernames,
     findAccount,
+    resolveAccountForEntity,
     addAccount,
     updateAccount,
     toggleAccountEnabled,

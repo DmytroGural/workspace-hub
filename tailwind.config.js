@@ -7,7 +7,6 @@ export default {
         modern: {
           primary: '#4573d2',
           hover: '#3560b7',
-          'primary-hover': '#3560b7',
           bg: '#f9f8f8',
           sidebar: '#1e1f21',
           'sidebar-hover': '#2d2e32',

@@ -2,18 +2,18 @@ import type { ProviderAccount } from '@/types/domain';
 
 export const STORAGE_KEYS = {
   ACCOUNTS: 'workspace_hub_accounts',
-  ACCOUNT_SETTINGS: 'workspace_hub_account_settings',
+  LEGACY_ACCOUNT_SETTINGS: 'workspace_hub_account_settings',
   PAGE_SIZE: 'workspace_hub_page_size',
   ONLY_ASSIGNED_TO_ME: 'workspace_hub_only_assigned_to_me',
   DRAWER_WIDTH: 'workspace_hub_drawer_width',
 } as const;
 
-interface StoredAccountUserSettings {
-  label: string;
+interface LegacyAccountSettings {
+  label?: string;
   workspaceName?: string;
-  color: string;
-  enabled: boolean;
-  credentials: Record<string, string>;
+  color?: string;
+  enabled?: boolean;
+  credentials?: Record<string, string>;
 }
 
 function normalizeStoredAccount(raw: Partial<ProviderAccount>): ProviderAccount | null {
@@ -26,7 +26,8 @@ function normalizeStoredAccount(raw: Partial<ProviderAccount>): ProviderAccount 
     provider: raw.provider,
     label: String(raw.label || raw.id),
     workspaceName: raw.workspaceName ? String(raw.workspaceName) : undefined,
-    credentials: typeof raw.credentials === 'object' && raw.credentials !== null ? { ...raw.credentials } : {},
+    credentials:
+      typeof raw.credentials === 'object' && raw.credentials !== null ? { ...raw.credentials } : {},
     color: raw.color || '#4573d2',
     enabled: raw.enabled ?? true,
     status: raw.status || 'idle',
@@ -37,9 +38,9 @@ function normalizeStoredAccount(raw: Partial<ProviderAccount>): ProviderAccount 
 }
 
 export class StorageService {
-  private loadAccountUserSettingsMap(): Record<string, StoredAccountUserSettings> {
+  private loadLegacySettingsMap(): Record<string, LegacyAccountSettings> {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.ACCOUNT_SETTINGS);
+      const raw = localStorage.getItem(STORAGE_KEYS.LEGACY_ACCOUNT_SETTINGS);
       if (!raw) return {};
       const parsed = JSON.parse(raw);
       return parsed && typeof parsed === 'object' ? parsed : {};
@@ -54,49 +55,38 @@ export class StorageService {
       if (!raw) return null;
 
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const settingsMap = this.loadAccountUserSettingsMap();
-        const accounts: ProviderAccount[] = [];
-        for (const item of parsed) {
-          const normalized = normalizeStoredAccount(item);
-          if (normalized) {
-            const override = settingsMap[normalized.id];
-            if (override) {
-              normalized.label = override.label || normalized.label;
-              normalized.workspaceName = override.workspaceName || normalized.workspaceName;
-              normalized.color = override.color || normalized.color;
-              normalized.enabled = override.enabled ?? normalized.enabled;
+      if (!Array.isArray(parsed) || parsed.length === 0) return null;
 
-              if (override.credentials && typeof override.credentials === 'object') {
-                normalized.credentials = { ...override.credentials };
-              }
-            }
-            accounts.push(normalized);
+      const legacySettings = this.loadLegacySettingsMap();
+      const accounts: ProviderAccount[] = [];
+      for (const item of parsed) {
+        const normalized = normalizeStoredAccount(item);
+        if (!normalized) continue;
+
+        const override = legacySettings[normalized.id];
+        if (override) {
+          normalized.label = override.label || normalized.label;
+          normalized.workspaceName = override.workspaceName || normalized.workspaceName;
+          normalized.color = override.color || normalized.color;
+          normalized.enabled = override.enabled ?? normalized.enabled;
+          if (override.credentials && typeof override.credentials === 'object') {
+            normalized.credentials = { ...override.credentials };
           }
         }
-        return accounts.length > 0 ? accounts : null;
+        accounts.push(normalized);
       }
+
+      return accounts.length > 0 ? accounts : null;
     } catch {
       return null;
     }
-    return null;
   }
 
   saveLiveAccounts(accounts: ProviderAccount[]): void {
     try {
       if (accounts.length > 0) {
-        const settingsMap: Record<string, StoredAccountUserSettings> = {};
-        for (const acc of accounts) {
-          settingsMap[acc.id] = {
-            label: acc.label,
-            workspaceName: acc.workspaceName,
-            color: acc.color,
-            enabled: acc.enabled,
-            credentials: { ...acc.credentials },
-          };
-        }
-        localStorage.setItem(STORAGE_KEYS.ACCOUNT_SETTINGS, JSON.stringify(settingsMap));
         localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
+        localStorage.removeItem(STORAGE_KEYS.LEGACY_ACCOUNT_SETTINGS);
       } else {
         this.clearAllAccounts();
       }
@@ -108,8 +98,7 @@ export class StorageService {
   clearAllAccounts(): void {
     try {
       localStorage.removeItem(STORAGE_KEYS.ACCOUNTS);
-      localStorage.removeItem(STORAGE_KEYS.ACCOUNT_SETTINGS);
-      localStorage.removeItem('workspace_hub_vault_seed');
+      localStorage.removeItem(STORAGE_KEYS.LEGACY_ACCOUNT_SETTINGS);
     } catch {
       // Ignore storage errors
     }

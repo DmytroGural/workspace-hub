@@ -1,8 +1,6 @@
-import { filter, find, intersection, map, reject } from 'lodash-es';
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import { workspaceSyncService } from '@/services/WorkspaceSyncService';
-import type { ProviderAccount, TaskBoard } from '@/types/domain';
 import { nowMillis } from '@/utils/dateUtils';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { useAccountsStore } from './accounts';
@@ -27,17 +25,6 @@ const INITIAL_LOADING_PROGRESS: SyncLoadingProgress = {
 
 const ACCOUNT_FILTER_SYNC_THROTTLE_MS = 1500;
 
-function resolveAccountForBoard(
-  board: TaskBoard,
-  accounts: ProviderAccount[],
-): ProviderAccount | undefined {
-  let account = find(accounts, { id: board.accountId });
-  if (!account?.enabled && board.accountIds) {
-    account = find(accounts, (a) => a.enabled && Boolean(board.accountIds?.includes(a.id)));
-  }
-  return account?.enabled ? account : undefined;
-}
-
 export const useSyncStore = defineStore('sync', () => {
   const accountsStore = useAccountsStore();
   const tasksStore = useTasksStore();
@@ -56,6 +43,14 @@ export const useSyncStore = defineStore('sync', () => {
   const inFlightBoardSyncs = new Map<string, Promise<void>>();
   let hasBootstrapped = false;
 
+  function setError(msg: string | null) {
+    errorMessage.value = msg;
+  }
+
+  function clearError() {
+    errorMessage.value = null;
+  }
+
   function beginSync() {
     activeSyncCount += 1;
     isLoading.value = true;
@@ -69,7 +64,7 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  async function withSyncScope<T>(fn: () => Promise<T>): Promise<T> {
+  async function runWithSyncIndicator<T>(fn: () => Promise<T>): Promise<T> {
     beginSync();
     try {
       return await fn();
@@ -103,7 +98,7 @@ export const useSyncStore = defineStore('sync', () => {
       return;
     }
 
-    inFlightFullSync = withSyncScope(async () => {
+    inFlightFullSync = runWithSyncIndicator(async () => {
       errorMessage.value = null;
 
       try {
@@ -117,7 +112,7 @@ export const useSyncStore = defineStore('sync', () => {
         tasksStore.syncEntitiesWithAccounts(accountsStore.accounts, result);
 
         const firstMember =
-          find(accountsStore.accounts, (a) => a.enabled && Boolean(a.member))?.member || null;
+          accountsStore.accounts.find((a) => a.enabled && Boolean(a.member))?.member || null;
         accountsStore.currentUser = firstMember;
 
         if (result.errors.length > 0) {
@@ -152,17 +147,17 @@ export const useSyncStore = defineStore('sync', () => {
       return existingSync;
     }
 
-    const run = withSyncScope(async () => {
+    const run = runWithSyncIndicator(async () => {
       try {
-        let board = find(tasksStore.boards, { id: boardId });
+        let board = tasksStore.boards.find((b) => b.id === boardId);
         if (!board) {
           await syncAllAccounts();
-          board = find(tasksStore.boards, { id: boardId });
+          board = tasksStore.boards.find((b) => b.id === boardId);
           if (!board) return;
         }
 
         const targetBoard = board;
-        const account = resolveAccountForBoard(targetBoard, accountsStore.accounts);
+        const account = accountsStore.resolveAccountForEntity(targetBoard, { enabledOnly: true });
         if (!account) return;
 
         const { lists: freshLists, tasks: freshTasks } = await workspaceSyncService.syncSingleBoard(
@@ -171,8 +166,12 @@ export const useSyncStore = defineStore('sync', () => {
         );
         if (!account.enabled) return;
 
-        const enabledIds = map(filter(accountsStore.accounts, 'enabled'), 'id');
-        const syncedAccountIds = intersection(targetBoard.accountIds || [account.id], enabledIds);
+        const enabledIdSet = new Set(
+          accountsStore.accounts.filter((a) => a.enabled).map((a) => a.id),
+        );
+        const syncedAccountIds = (targetBoard.accountIds || [account.id]).filter((id) =>
+          enabledIdSet.has(id),
+        );
 
         for (const l of freshLists) {
           l.accountIds = [...syncedAccountIds];
@@ -184,15 +183,15 @@ export const useSyncStore = defineStore('sync', () => {
         }
 
         tasksStore.setLists([
-          ...reject(tasksStore.lists, { idBoard: targetBoard.id }),
+          ...tasksStore.lists.filter((l) => l.idBoard !== targetBoard.id),
           ...freshLists,
         ]);
         tasksStore.setTasks([
-          ...reject(tasksStore.tasks, { idBoard: targetBoard.id }),
+          ...tasksStore.tasks.filter((t) => t.idBoard !== targetBoard.id),
           ...freshTasks,
         ]);
       } catch (err: unknown) {
-        const boardName = find(tasksStore.boards, { id: boardId })?.name || boardId;
+        const boardName = tasksStore.boards.find((b) => b.id === boardId)?.name || boardId;
         const msg = getErrorMessage(err, 'Board sync failed');
         errorMessage.value = `Failed to refresh "${boardName}": ${msg}`;
       } finally {
@@ -241,6 +240,9 @@ export const useSyncStore = defineStore('sync', () => {
     isLoading,
     loadingProgress,
     errorMessage,
+    setError,
+    clearError,
+    runWithSyncIndicator,
     syncAllAccounts,
     syncBoardById,
     ensureBootstrap,

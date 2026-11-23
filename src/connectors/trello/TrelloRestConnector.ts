@@ -120,14 +120,10 @@ export class TrelloRestConnector extends BaseTaskProviderConnector {
   }
 
   async getListsForBoard(boardId: string): Promise<BoardList[]> {
-    try {
-      const rawLists = await this.http.get<TrelloRawList[]>(`/boards/${boardId}/lists`, {
-        params: { fields: 'id,name,pos,closed' },
-      });
-      return rawLists.map((l) => mapRawList(l, boardId, this.meta));
-    } catch {
-      return [];
-    }
+    const rawLists = await this.http.get<TrelloRawList[]>(`/boards/${boardId}/lists`, {
+      params: { fields: 'id,name,pos,closed' },
+    });
+    return rawLists.map((l) => mapRawList(l, boardId, this.meta));
   }
 
   private buildListMap(lists: BoardList[]): Map<string, string> {
@@ -136,23 +132,18 @@ export class TrelloRestConnector extends BaseTaskProviderConnector {
 
   async getCardsForBoard(board: TaskBoard, lists: BoardList[]): Promise<TaskInterface[]> {
     const listMap = this.buildListMap(lists);
-
-    try {
-      const rawCards = await this.http.get<TrelloRawCard[]>(`/boards/${board.id}/cards`, {
-        params: {
-          filter: 'open',
-          fields:
-            'id,name,desc,due,dueComplete,idBoard,idList,idMembers,labels,url,pos,dateLastActivity,closed,badges',
-          checklists: 'all',
-          members: 'true',
-          attachments: 'true',
-          attachment_fields: 'id,name,url,mimeType,bytes,date,previews',
-        },
-      });
-      return rawCards.map((c) => mapRawCard(c, board, listMap, this.meta));
-    } catch {
-      return [];
-    }
+    const rawCards = await this.http.get<TrelloRawCard[]>(`/boards/${board.id}/cards`, {
+      params: {
+        filter: 'open',
+        fields:
+          'id,name,desc,due,dueComplete,idBoard,idList,idMembers,labels,url,pos,dateLastActivity,closed,badges',
+        checklists: 'all',
+        members: 'true',
+        attachments: 'true',
+        attachment_fields: 'id,name,url,mimeType,bytes,date,previews',
+      },
+    });
+    return rawCards.map((c) => mapRawCard(c, board, listMap, this.meta));
   }
 
   async getCard(

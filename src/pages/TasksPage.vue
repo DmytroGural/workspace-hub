@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { AlertCircle, ArrowLeft, RefreshCw } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import TaskBoardView from '@/components/TaskBoardView.vue';
 import TaskCalendarView from '@/components/TaskCalendarView.vue';
 import TaskListView from '@/components/TaskListView.vue';
+import { useAutoRefresh } from '@/composables/useAutoRefresh';
 import { useFiltersStore, useSyncStore, useTasksStore, useUIStore } from '@/stores';
 import type { FilterSection } from '@/types/domain';
-import { resolveVisibleViewMode, type TaskDisplayView } from '@/utils/taskGrouping';
+import { resolveVisibleViewMode, type TaskDisplayView } from '@/utils/taskSections';
 
 const route = useRoute();
 
@@ -45,57 +46,17 @@ const currentBoard = computed(() => {
 
 const activeView = computed<TaskDisplayView>(() => resolveVisibleViewMode(route.query.view));
 
-let autoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-let isAutoRefreshActive = false;
-let autoRefreshGeneration = 0;
-
-function stopAutoRefresh(): void {
-  isAutoRefreshActive = false;
-  autoRefreshGeneration += 1;
-  if (autoRefreshTimer === null) return;
-  clearTimeout(autoRefreshTimer);
-  autoRefreshTimer = null;
-}
-
-function scheduleAutoRefresh(generation = autoRefreshGeneration): void {
-  if (!isAutoRefreshActive || generation !== autoRefreshGeneration) {
-    return;
-  }
-
-  if (autoRefreshTimer !== null) {
-    clearTimeout(autoRefreshTimer);
-  }
-
-  const delayMs = boardId.value ? BOARD_AUTO_REFRESH_MS : TASKS_AUTO_REFRESH_MS;
-  autoRefreshTimer = setTimeout(() => {
-    void runAutoRefreshTick(generation);
-  }, delayMs);
-}
-
-async function runAutoRefreshTick(generation: number): Promise<void> {
-  autoRefreshTimer = null;
-  if (!isAutoRefreshActive || generation !== autoRefreshGeneration) {
-    return;
-  }
-
-  try {
-    if (!selectedTaskId.value && !isNewTaskModalOpen.value && !isLoading.value) {
-      if (boardId.value) {
-        await refreshBoard(boardId.value);
-      } else {
-        await refreshTasks();
-      }
+const autoRefresh = useAutoRefresh({
+  getIntervalMs: () => (boardId.value ? BOARD_AUTO_REFRESH_MS : TASKS_AUTO_REFRESH_MS),
+  shouldSkip: () => Boolean(selectedTaskId.value || isNewTaskModalOpen.value || isLoading.value),
+  onTick: async () => {
+    if (boardId.value) {
+      await refreshBoard(boardId.value);
+    } else {
+      await refreshTasks();
     }
-  } finally {
-    scheduleAutoRefresh(generation);
-  }
-}
-
-function startAutoRefresh(): void {
-  stopAutoRefresh();
-  isAutoRefreshActive = true;
-  scheduleAutoRefresh(autoRefreshGeneration);
-}
+  },
+});
 
 watch(
   () => [route.params.boardId, route.query.filter] as const,
@@ -125,17 +86,7 @@ watch(
 );
 
 watch(boardId, () => {
-  if (isAutoRefreshActive) {
-    startAutoRefresh();
-  }
-});
-
-onMounted(() => {
-  startAutoRefresh();
-});
-
-onBeforeUnmount(() => {
-  stopAutoRefresh();
+  autoRefresh.restart();
 });
 </script>
 

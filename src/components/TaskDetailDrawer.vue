@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { AlertCircle } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useDismissibleLayer } from '@/composables/useDismissibleLayer';
+import { useResizablePanel } from '@/composables/useResizablePanel';
 import { storageService } from '@/services/StorageService';
 import { useAccountsStore, useProvidersStore, useTasksStore, useUIStore } from '@/stores';
 import type { TaskLabel, WorkspaceMember } from '@/types/domain';
@@ -68,6 +70,32 @@ const isSavingLabel = ref(false);
 const isSavingAssignee = ref(false);
 const isMutatingTaskAction = ref(false);
 const taskActionError = ref<string | null>(null);
+
+const {
+  width: drawerWidth,
+  isResizing,
+  minWidth: MIN_DRAWER_WIDTH,
+  startResize,
+  resetWidth: resetDrawerWidth,
+  stepWidth: stepDrawerWidth,
+} = useResizablePanel({
+  defaultWidth: 680,
+  minWidth: 420,
+  loadWidth: (fallback) => storageService.loadDrawerWidth(fallback),
+  saveWidth: (w) => storageService.saveDrawerWidth(w),
+});
+
+useDismissibleLayer({
+  containerRef: drawerRef,
+  isActive: () =>
+    Boolean(
+      !isResizing.value &&
+        selectedTask.value &&
+        !uiStore.isNewTaskModalOpen &&
+        !uiStore.isSettingsModalOpen,
+    ),
+  onDismiss: close,
+});
 
 watch(
   () => [selectedTask.value?.id, selectedTask.value?.name, selectedTask.value?.desc] as const,
@@ -157,111 +185,6 @@ function close() {
   handleDescBlur();
   selectedTaskId.value = null;
 }
-
-const DEFAULT_DRAWER_WIDTH = 680;
-const MIN_DRAWER_WIDTH = 420;
-
-const drawerWidth = ref(storageService.loadDrawerWidth(DEFAULT_DRAWER_WIDTH));
-const isResizing = ref(false);
-let startX = 0;
-let startWidth = 0;
-
-function getMaxDrawerWidth(): number {
-  if (typeof window === 'undefined') return 2000;
-  return Math.max(MIN_DRAWER_WIDTH, window.innerWidth - 80);
-}
-
-function clampWidth(width: number): number {
-  const max = getMaxDrawerWidth();
-  return Math.min(max, Math.max(MIN_DRAWER_WIDTH, width));
-}
-
-function handleWindowResize() {
-  const clamped = clampWidth(drawerWidth.value);
-  if (clamped !== drawerWidth.value) {
-    drawerWidth.value = clamped;
-    storageService.saveDrawerWidth(clamped);
-  }
-}
-
-function onMouseMove(event: MouseEvent) {
-  if (!isResizing.value) return;
-  const delta = startX - event.clientX;
-  drawerWidth.value = clampWidth(startWidth + delta);
-}
-
-function stopResize() {
-  if (!isResizing.value) return;
-  isResizing.value = false;
-  document.removeEventListener('mousemove', onMouseMove);
-  document.removeEventListener('mouseup', stopResize);
-  document.body.style.cursor = '';
-  document.body.style.userSelect = '';
-  storageService.saveDrawerWidth(drawerWidth.value);
-}
-
-function startResize(event: MouseEvent) {
-  event.preventDefault();
-  event.stopPropagation();
-  isResizing.value = true;
-  startX = event.clientX;
-  startWidth = drawerWidth.value;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', stopResize);
-}
-
-function resetDrawerWidth() {
-  const clamped = clampWidth(DEFAULT_DRAWER_WIDTH);
-  drawerWidth.value = clamped;
-  storageService.saveDrawerWidth(clamped);
-}
-
-function stepDrawerWidth(delta: number) {
-  const clamped = clampWidth(drawerWidth.value + delta);
-  drawerWidth.value = clamped;
-  storageService.saveDrawerWidth(clamped);
-}
-
-function handleOutsidePointerDown(event: PointerEvent) {
-  if (
-    isResizing.value ||
-    !selectedTask.value ||
-    !drawerRef.value ||
-    uiStore.isNewTaskModalOpen ||
-    uiStore.isSettingsModalOpen
-  ) {
-    return;
-  }
-  if (event.target instanceof Node && !drawerRef.value.contains(event.target)) {
-    close();
-  }
-}
-
-function handleKeydown(event: KeyboardEvent) {
-  if (
-    event.key === 'Escape' &&
-    selectedTask.value &&
-    !uiStore.isNewTaskModalOpen &&
-    !uiStore.isSettingsModalOpen
-  ) {
-    close();
-  }
-}
-
-onMounted(() => {
-  document.addEventListener('pointerdown', handleOutsidePointerDown);
-  window.addEventListener('keydown', handleKeydown);
-  window.addEventListener('resize', handleWindowResize);
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', handleOutsidePointerDown);
-  window.removeEventListener('keydown', handleKeydown);
-  window.removeEventListener('resize', handleWindowResize);
-  stopResize();
-});
 
 function handleNameBlur() {
   if (selectedTask.value && localName.value.trim() && localName.value !== selectedTask.value.name) {

@@ -1,5 +1,5 @@
 import type { BoardList, TaskInterface } from '@/types/domain';
-import { getSortedBoardLists, SMART_SECTION_META, SMART_SECTION_ORDER } from '@/utils/taskGrouping';
+import { getSortedBoardLists, SMART_SECTION_META, SMART_SECTION_ORDER } from '@/utils/taskSections';
 
 export interface BoardColumn {
   id: string;

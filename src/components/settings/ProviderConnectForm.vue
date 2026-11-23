@@ -136,7 +136,7 @@ function handleCredentialInput(key: string, event: Event) {
       <button
         type="submit"
         :disabled="isSubmitting || !canSubmit"
-        class="w-full inline-flex items-center justify-center gap-1.5 px-5 py-2.5 text-xs font-semibold text-white bg-modern-primary hover:bg-modern-primary-hover disabled:opacity-50 rounded-lg shadow-xs transition-colors"
+        class="w-full inline-flex items-center justify-center gap-1.5 px-5 py-2.5 text-xs font-semibold text-white bg-modern-primary hover:bg-modern-hover disabled:opacity-50 rounded-lg shadow-xs transition-colors"
       >
         <Plus class="w-3.5 h-3.5" />
         {{ isSubmitting ? 'Verifying & Syncing...' : `Verify & Connect ${provider.name}` }}

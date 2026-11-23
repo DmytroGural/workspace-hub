@@ -11,18 +11,13 @@ import {
   Trash2,
   X,
 } from 'lucide-vue-next';
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import LexicalMarkdownEditor from '@/components/editor/LexicalMarkdownEditor.vue';
+import { useFileDropzone, usePendingFiles } from '@/composables/useFileAttachments';
 import type { TaskComment, WorkspaceMember } from '@/types/domain';
 import { formatCommentDateTime } from '@/utils/dateUtils';
 import { formatBytes, getMemberInitials } from '@/utils/taskPresentation';
 import TaskAttachmentList from './TaskAttachmentList.vue';
-
-interface PendingAttachment {
-  id: string;
-  file: File;
-  previewUrl?: string;
-}
 
 const props = withDefaults(
   defineProps<{
@@ -52,24 +47,34 @@ const emit = defineEmits<{
   deleteComment: [commentId: string];
 }>();
 
+const fileInputRef = ref<HTMLInputElement | null>(null);
 const newCommentText = ref('');
 const commentResetCount = ref(0);
-const pendingAttachments = ref<PendingAttachment[]>([]);
-const fileInputRef = ref<HTMLInputElement | null>(null);
-const isDragging = ref(false);
 
 const editingCommentId = ref<string | null>(null);
 const editingCommentText = ref('');
 const mutatingCommentId = ref<string | null>(null);
 
-function clearPendingAttachments() {
-  pendingAttachments.value.forEach((item) => {
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-  });
-  pendingAttachments.value = [];
-}
+const {
+  pendingFiles: pendingAttachments,
+  addFiles: addPendingFiles,
+  removeFile: removePending,
+  clearFiles: clearPendingAttachments,
+} = usePendingFiles();
 
-onBeforeUnmount(clearPendingAttachments);
+const {
+  isDragging,
+  triggerFilePicker,
+  handleFileChange,
+  handleDragOver,
+  handleDragLeave,
+  handleDrop,
+  handlePaste,
+} = useFileDropzone({
+  fileInputRef,
+  canAttach: () => props.canManageAttachments,
+  onFiles: addPendingFiles,
+});
 
 watch(
   () => props.taskId,
@@ -154,45 +159,6 @@ watch(
     }
   },
 );
-
-function addFiles(fileList: FileList | null | undefined) {
-  if (!fileList || fileList.length === 0 || !props.canManageAttachments) return;
-  const next = Array.from(fileList).map((file, idx) => ({
-    id: `${Date.now()}_${idx}_${file.name}`,
-    file,
-    previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
-  }));
-  pendingAttachments.value = [...pendingAttachments.value, ...next];
-}
-
-function removePending(id: string) {
-  const target = pendingAttachments.value.find((item) => item.id === id);
-  if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
-  pendingAttachments.value = pendingAttachments.value.filter((item) => item.id !== id);
-}
-
-function triggerFilePicker() {
-  fileInputRef.value?.click();
-}
-
-function handleFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  addFiles(input.files);
-  input.value = '';
-}
-
-function handleDrop(event: DragEvent) {
-  isDragging.value = false;
-  addFiles(event.dataTransfer?.files);
-}
-
-function handlePaste(event: ClipboardEvent) {
-  const files = event.clipboardData?.files;
-  if (files && files.length > 0 && props.canManageAttachments) {
-    event.preventDefault();
-    addFiles(files);
-  }
-}
 
 function submitComment() {
   const text = newCommentText.value.trim();
@@ -346,8 +312,8 @@ function submitComment() {
     <form
       v-if="canComment"
       @submit.prevent="submitComment"
-      @dragover.prevent="canManageAttachments && (isDragging = true)"
-      @dragleave.self="isDragging = false"
+      @dragover.prevent="handleDragOver"
+      @dragleave.self="handleDragLeave"
       @drop.prevent="handleDrop"
       :class="[
         'space-y-2 pt-1 rounded-lg transition-all',
@@ -420,7 +386,7 @@ function submitComment() {
         <button
           type="submit"
           :disabled="isPosting || (!newCommentText.trim() && pendingAttachments.length === 0)"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-modern-primary hover:bg-modern-primary-hover disabled:opacity-50 transition-colors"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-modern-primary hover:bg-modern-hover disabled:opacity-50 transition-colors"
         >
           <Loader2 v-if="isPosting" class="w-3.5 h-3.5 animate-spin" />
           <Send v-else class="w-3.5 h-3.5" />

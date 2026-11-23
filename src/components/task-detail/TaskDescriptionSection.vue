@@ -2,6 +2,7 @@
 import { AlertCircle, Loader2, Paperclip } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 import LexicalMarkdownEditor from '@/components/editor/LexicalMarkdownEditor.vue';
+import { useFileDropzone } from '@/composables/useFileAttachments';
 import type { TaskAttachment, WorkspaceMember } from '@/types/domain';
 import TaskAttachmentList from './TaskAttachmentList.vue';
 
@@ -33,17 +34,28 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   updateDescription: [value: string];
-  'update:description': [value: string];
   blur: [];
   uploadFiles: [files: File[]];
   deleteAttachment: [attachmentId: string];
 }>();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
-const isDragging = ref(false);
 const localDesc = ref(props.description || '');
-
 const editorId = computed(() => (props.taskId ? `task-desc-${props.taskId}` : 'new-task-desc'));
+
+const {
+  isDragging,
+  triggerFilePicker,
+  handleFileChange,
+  handleDragOver,
+  handleDragLeave,
+  handleDrop,
+  handlePaste,
+} = useFileDropzone({
+  fileInputRef,
+  canAttach: () => props.canManageAttachments,
+  onFiles: (files) => emit('uploadFiles', files),
+});
 
 watch(
   () => [props.taskId, props.description] as const,
@@ -56,41 +68,11 @@ watch(
 function handleEditorUpdate(value: string) {
   localDesc.value = value;
   emit('updateDescription', value);
-  emit('update:description', value);
 }
 
 function handleBlur() {
   emit('updateDescription', localDesc.value);
-  emit('update:description', localDesc.value);
   emit('blur');
-}
-
-function triggerFilePicker() {
-  fileInputRef.value?.click();
-}
-
-function emitFiles(fileList: FileList | null | undefined) {
-  if (!fileList || fileList.length === 0 || !props.canManageAttachments) return;
-  emit('uploadFiles', Array.from(fileList));
-}
-
-function handleFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  emitFiles(input.files);
-  input.value = '';
-}
-
-function handleDrop(event: DragEvent) {
-  isDragging.value = false;
-  emitFiles(event.dataTransfer?.files);
-}
-
-function handlePaste(event: ClipboardEvent) {
-  const files = event.clipboardData?.files;
-  if (files && files.length > 0 && props.canManageAttachments) {
-    event.preventDefault();
-    emitFiles(files);
-  }
 }
 </script>
 
@@ -98,8 +80,8 @@ function handlePaste(event: ClipboardEvent) {
   <section
     :class="layout === 'stacked' ? 'space-y-1' : 'space-y-2.5'"
     aria-label="Task description and attachments dropzone"
-    @dragover.prevent="canManageAttachments && (isDragging = true)"
-    @dragleave.self="isDragging = false"
+    @dragover.prevent="handleDragOver"
+    @dragleave.self="handleDragLeave"
     @drop.prevent="handleDrop"
   >
     <div class="flex items-center justify-between gap-2">

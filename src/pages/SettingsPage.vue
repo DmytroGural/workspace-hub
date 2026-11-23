@@ -80,10 +80,12 @@ async function saveEdit(
 
         <button
           type="button"
+          aria-label="Connect new workspace"
           @click="openAddAccountModal"
           class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-modern-primary hover:bg-modern-hover rounded-lg shadow-sm transition-colors"
         >
           <Plus class="w-4 h-4" />
+          <span>Add Workspace</span>
         </button>
       </div>
 

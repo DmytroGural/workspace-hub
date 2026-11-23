@@ -93,7 +93,7 @@ export interface TaskBoard {
   };
 }
 
-export type AsanaSection = 'today' | 'upcoming' | 'later' | 'overdue' | 'completed';
+export type TaskTimeSection = 'today' | 'upcoming' | 'later' | 'overdue' | 'completed';
 
 export interface TaskInterface {
   id: string;
@@ -124,7 +124,7 @@ export interface TaskInterface {
   boardColor: string;
   listName: string;
   assignedMembers: WorkspaceMember[];
-  section: AsanaSection;
+  section: TaskTimeSection;
 }
 
 export type ViewMode = 'dashboard' | 'list' | 'board' | 'calendar';

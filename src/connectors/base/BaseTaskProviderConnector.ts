@@ -13,6 +13,8 @@ import type {
   WorkspaceMember,
 } from '@/types/domain';
 
+const BOARD_SYNC_CONCURRENCY = 4;
+
 /**
  * Extracts normalized account metadata passed into provider mappers and connectors.
  */
@@ -28,7 +30,7 @@ export function createAccountMeta(account: ProviderAccount): AccountMeta {
 
 /**
  * Reusable base class for external task-provider connectors.
- * Supplies the standard cross-board sync loop and required account identity fields,
+ * Supplies a bounded-concurrency cross-board sync loop and required account identity fields,
  * while leaving optional mutation/metadata methods for subclasses to implement per capabilities.
  */
 export abstract class BaseTaskProviderConnector implements ITaskProviderApi {
@@ -57,28 +59,43 @@ export abstract class BaseTaskProviderConnector implements ITaskProviderApi {
     skipBoardIds?: Set<string>,
   ): Promise<BoardSyncPayload> {
     const boards = await this.getMyBoards();
+    const results: Array<{ lists: BoardList[]; tasks: TaskInterface[] }> = Array.from(
+      { length: boards.length },
+      () => ({ lists: [], tasks: [] }),
+    );
+
+    let nextIndex = 0;
+    let completed = 0;
+
+    const worker = async () => {
+      while (nextIndex < boards.length) {
+        const currentIndex = nextIndex++;
+        const board = boards[currentIndex];
+        if (!board) return;
+
+        if (!skipBoardIds?.has(board.id)) {
+          try {
+            const lists = await this.getListsForBoard(board.id);
+            const cards = await this.getCardsForBoard(board, lists);
+            results[currentIndex] = { lists, tasks: cards };
+          } catch {
+            // Individual board failure should not abort the entire cross-board sync
+          }
+        }
+
+        completed++;
+        onProgress?.(completed, boards.length, board.name);
+      }
+    };
+
+    const workerCount = Math.min(BOARD_SYNC_CONCURRENCY, boards.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
     const allLists: BoardList[] = [];
     const allTasks: TaskInterface[] = [];
-
-    let index = 0;
-    for (const board of boards) {
-      index++;
-      if (onProgress) {
-        onProgress(index, boards.length, board.name);
-      }
-
-      if (skipBoardIds?.has(board.id)) {
-        continue;
-      }
-
-      try {
-        const lists = await this.getListsForBoard(board.id);
-        allLists.push(...lists);
-        const cards = await this.getCardsForBoard(board, lists);
-        allTasks.push(...cards);
-      } catch {
-        // Individual board failure should not abort the entire cross-board sync
-      }
+    for (const item of results) {
+      allLists.push(...item.lists);
+      allTasks.push(...item.tasks);
     }
 
     return {
