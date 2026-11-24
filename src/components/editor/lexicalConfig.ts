@@ -1,7 +1,9 @@
 import { CodeHighlightNode, CodeNode } from '@lexical/code';
 import { AutoLinkNode, LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
+import { type TextMatchTransformer, TRANSFORMERS, type Transformer } from '@lexical/markdown';
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
+import { $createImageNode, $isImageNode, ImageNode, isSafeImageSrc } from './ImageNode';
 import { MentionNode } from './MentionNode';
 
 export interface ActiveFormats {
@@ -32,7 +34,30 @@ export const LEXICAL_NODES = [
   LinkNode,
   AutoLinkNode,
   MentionNode,
+  ImageNode,
 ];
+
+export const IMAGE_TRANSFORMER: TextMatchTransformer = {
+  dependencies: [ImageNode],
+  export: (node) => {
+    if (!$isImageNode(node)) return null;
+    return `![${node.getAltText()}](${node.getSrc()})`;
+  },
+  importRegExp: /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/,
+  regExp: /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/,
+  replace: (textNode, match) => {
+    const altText = match[1] ?? '';
+    const src = match[2] ?? '';
+    if (!isSafeImageSrc(src)) return;
+    const imageNode = $createImageNode(src, altText);
+    textNode.replace(imageNode);
+  },
+  trigger: ')',
+  type: 'text-match',
+};
+
+// Place IMAGE_TRANSFORMER before LINK so `![alt](url)` renders as an image instead of a link
+export const MARKDOWN_TRANSFORMERS: Transformer[] = [IMAGE_TRANSFORMER, ...TRANSFORMERS];
 
 export const EDITOR_THEME = {
   paragraph: 'lexical-paragraph',

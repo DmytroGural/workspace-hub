@@ -1,5 +1,7 @@
 # Workspace Hub — Modern Style Web Client for Trello
 
+![screenshot.jpg](https://dmytrogural.github.io/workspace-hub/screenshot.jpg)
+
 **Workspace Hub** is a modern **Vue 3 + TypeScript** web client with a **modern style** interface that brings together boards, lists, and cards from connected **Trello** accounts into a unified workspace.
 
 ---

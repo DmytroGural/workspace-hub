@@ -1,10 +1,6 @@
 <script setup lang="ts">
-import { Github, Plus, Sparkles } from 'lucide-vue-next';
+import { Github, Sparkles } from 'lucide-vue-next';
 import { RouterLink } from 'vue-router';
-
-const emit = defineEmits<{
-  addTask: [];
-}>();
 </script>
 
 <template>

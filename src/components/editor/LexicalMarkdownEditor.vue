@@ -13,7 +13,6 @@ import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
   registerMarkdownShortcuts,
-  TRANSFORMERS,
 } from '@lexical/markdown';
 import {
   $createHeadingNode,
@@ -50,6 +49,7 @@ import {
   EDITOR_THEME,
   INITIAL_ACTIVE_FORMATS,
   LEXICAL_NODES,
+  MARKDOWN_TRANSFORMERS,
 } from './lexicalConfig';
 import MentionDropdown from './MentionDropdown.vue';
 import { MentionNode } from './MentionNode';
@@ -185,7 +185,7 @@ function applyMarkdownToEditor(markdown: string) {
   isApplyingExternal = true;
   try {
     editor.update(() => {
-      $convertFromMarkdownString(markdown || '', TRANSFORMERS);
+      $convertFromMarkdownString(markdown || '', MARKDOWN_TRANSFORMERS);
       isEmpty.value = computeIsEmpty();
     });
     lastEmittedMarkdown = markdown || '';
@@ -222,7 +222,7 @@ onMounted(() => {
       registerHistory(editor, createEmptyHistoryState(), 300),
       registerList(editor),
       registerCheckList(editor),
-      registerMarkdownShortcuts(editor, TRANSFORMERS),
+      registerMarkdownShortcuts(editor, MARKDOWN_TRANSFORMERS),
       editor.registerCommand(
         TOGGLE_LINK_COMMAND,
         (payload) => {
@@ -320,7 +320,7 @@ onMounted(() => {
             return;
           }
 
-          const markdown = $convertToMarkdownString(TRANSFORMERS);
+          const markdown = $convertToMarkdownString(MARKDOWN_TRANSFORMERS);
           if (markdown !== lastEmittedMarkdown) {
             lastEmittedMarkdown = markdown;
             emit('update:modelValue', markdown);
@@ -418,6 +418,13 @@ function handleApplyLink(url: string | null) {
 function handleEditorClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null;
   if (handleMentionClick(target)) return;
+
+  const img = target?.closest<HTMLImageElement>('img.lexical-image[data-image-src]');
+  if (img?.dataset.imageSrc) {
+    event.preventDefault();
+    window.open(img.dataset.imageSrc, '_blank', 'noopener,noreferrer');
+    return;
+  }
 
   const anchor = target?.closest('a');
   if (!anchor?.href) return;
@@ -623,5 +630,23 @@ function handleFocusOut(event: FocusEvent) {
 .lexical-editor-surface :deep(.lexical-mention:hover) {
   background-color: #e0e7ff;
   text-decoration-color: #4573d2;
+}
+.lexical-editor-surface :deep(.lexical-image-wrap) {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0.25rem 0;
+  vertical-align: middle;
+}
+.lexical-editor-surface :deep(.lexical-image) {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+  object-fit: contain;
+  cursor: pointer;
+}
+.lexical-editor-surface :deep(.lexical-image:hover) {
+  border-color: #a5b4fc;
 }
 </style>

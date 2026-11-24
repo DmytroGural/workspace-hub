@@ -32,16 +32,16 @@ import { stripMarkdownToPlainText } from '@/utils/markdownUtils';
 const route = useRoute();
 const router = useRouter();
 
-const accountsStore = useAccountsStore();
+// const accountsStore = useAccountsStore();
 const tasksStore = useTasksStore();
 const filtersStore = useFiltersStore();
 const syncStore = useSyncStore();
 const uiStore = useUIStore();
 
-const { enabledAccounts } = storeToRefs(accountsStore);
+// const { enabledAccounts } = storeToRefs(accountsStore);
 const { boards, availableLabels } = storeToRefs(tasksStore);
 const {
-  selectedAccountId,
+  // selectedAccountId,
   selectedBoardId,
   filterSection,
   searchQuery,
