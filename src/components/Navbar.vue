@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Calendar,
+  Info,
   Kanban,
   Layers,
   LayoutDashboard,
@@ -14,8 +15,10 @@ import {
   X,
 } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
-import { type Component, computed } from 'vue';
+import { type Component, computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import LexicalMarkdownEditor from '@/components/editor/LexicalMarkdownEditor.vue';
+import { useDismissibleLayer } from '@/composables/useDismissibleLayer';
 import {
   useAccountsStore,
   useFiltersStore,
@@ -24,6 +27,7 @@ import {
   useUIStore,
 } from '@/stores';
 import type { ViewMode } from '@/types/domain';
+import { stripMarkdownToPlainText } from '@/utils/markdownUtils';
 
 const route = useRoute();
 const router = useRouter();
@@ -83,13 +87,38 @@ function navigateTab(tabId: ViewMode) {
   });
 }
 
+const currentBoard = computed(() => {
+  if (route.name !== 'board' || !selectedBoardId.value) return null;
+  return boards.value.find((item) => item.id === selectedBoardId.value) || null;
+});
+
+const boardDescription = computed(() => (currentBoard.value?.desc || '').trim());
+const boardDescriptionPreview = computed(() => stripMarkdownToPlainText(boardDescription.value));
+
+const showDescriptionPopover = ref(false);
+const descriptionPopoverRef = ref<HTMLElement | null>(null);
+
+useDismissibleLayer({
+  containerRef: descriptionPopoverRef,
+  isActive: () => showDescriptionPopover.value,
+  onDismiss: () => {
+    showDescriptionPopover.value = false;
+  },
+});
+
+watch(
+  () => [route.name, selectedBoardId.value],
+  () => {
+    showDescriptionPopover.value = false;
+  },
+);
+
 const currentTitle = computed(() => {
   if (route.name === 'settings') {
     return 'Settings & Integrations';
   }
   if (route.name === 'board' && selectedBoardId.value) {
-    const b = boards.value.find((item) => item.id === selectedBoardId.value);
-    return b ? b.name : 'Board Tasks';
+    return currentBoard.value ? currentBoard.value.name : 'Board Tasks';
   }
   if (route.name === 'dashboard') {
     return 'Unified Cross-Board Dashboard';
@@ -125,7 +154,54 @@ const viewTabs: { id: ViewMode; label: string; icon: Component }[] = [
           >
             <span>{{ currentTitle }}</span>
           </h1>
-          <p class="text-xs text-gray-500 truncate">
+          <div v-if="boardDescription" ref="descriptionPopoverRef" class="relative min-w-0">
+            <button
+              type="button"
+              :aria-expanded="showDescriptionPopover"
+              aria-label="Show full board description"
+              :title="boardDescriptionPreview"
+              @click="showDescriptionPopover = !showDescriptionPopover"
+              class="group flex items-center gap-1 max-w-full text-left text-xs text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              <span class="truncate">{{ boardDescriptionPreview }}</span>
+              <Info
+                class="w-3 h-3 shrink-0 text-gray-400 group-hover:text-modern-primary transition-colors"
+              />
+            </button>
+
+            <div
+              v-if="showDescriptionPopover"
+              role="dialog"
+              aria-label="Board description"
+              class="absolute left-0 top-full mt-2 z-40 w-96 max-w-[min(28rem,calc(100vw-4rem))] bg-white border border-gray-200 rounded-xl shadow-xl p-4 select-text"
+            >
+              <div
+                class="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-gray-100"
+              >
+                <span class="text-xs font-semibold text-gray-900 truncate">
+                  {{ currentTitle }}
+                  — Description
+                </span>
+                <button
+                  type="button"
+                  aria-label="Close board description"
+                  @click="showDescriptionPopover = false"
+                  class="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  <X class="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div class="max-h-64 overflow-y-auto">
+                <LexicalMarkdownEditor
+                  :model-value="boardDescription"
+                  :reset-key="`${currentBoard?.id || ''}-${boardDescription}`"
+                  :editable="false"
+                  borderless
+                />
+              </div>
+            </div>
+          </div>
+          <p v-else class="text-xs text-gray-500 truncate">
             Unified modern-style workspace across your connected providers
           </p>
         </div>
@@ -153,6 +229,7 @@ const viewTabs: { id: ViewMode; label: string; icon: Component }[] = [
         </div>
 
         <!-- Account filter (shown when multiple accounts enabled) -->
+        <!--
         <select
           v-if="enabledAccounts.length > 1"
           :value="selectedAccountId || ''"
@@ -165,6 +242,7 @@ const viewTabs: { id: ViewMode; label: string; icon: Component }[] = [
             {{ acc.label }}
           </option>
         </select>
+        -->
 
         <!-- Filter: "Assigned to me" toggle -->
         <button

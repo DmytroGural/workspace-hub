@@ -102,7 +102,10 @@ const surfaceClasses = computed(() => {
   if (props.variant === 'compact') {
     return 'lexical-editor-surface w-full px-2.5 py-2 text-xs text-gray-800 outline-none min-h-[60px] max-h-52 overflow-y-auto leading-relaxed';
   }
-  return 'lexical-editor-surface w-full px-3 py-2.5 text-xs text-gray-800 outline-none min-h-[84px] max-h-72 overflow-y-auto leading-relaxed';
+  if (props.variant === 'stacked') {
+    return 'lexical-editor-surface w-full px-3 py-2.5 text-xs text-gray-800 outline-none min-h-[84px] max-h-72 overflow-y-auto leading-relaxed';
+  }
+  return 'lexical-editor-surface w-full px-3 py-2.5 text-xs text-gray-800 outline-none min-h-[84px] leading-relaxed';
 });
 
 let editor: LexicalEditor | null = null;
@@ -460,7 +463,7 @@ function handleFocusOut(event: FocusEvent) {
     @focusout="handleFocusOut"
   >
     <EditorToolbar
-      v-if="editable"
+      v-if="editable && isFocused"
       ref="toolbarRef"
       :active-formats="activeFormats"
       @format-text="formatText"

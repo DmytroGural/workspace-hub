@@ -54,7 +54,7 @@ function goToFilter(filter: FilterSection) {
     <SidebarHeader @add-task="openNewTaskModal()" />
 
     <!-- Main Navigation Section -->
-    <div class="flex-1 overflow-y-auto px-2 space-y-6 text-xs">
+    <div class="flex-1 overflow-y-auto px-2 space-y-6 text-xs mt-4">
       <SidebarPagesNav
         :is-dashboard-active="isDashboardActive"
         :is-tasks-all-active="isTasksAllActive"

@@ -38,6 +38,7 @@ const emit = defineEmits<{
   </div>
 
   <!-- Quick Action: Create Task -->
+  <!--
   <div class="p-3">
     <button
       type="button"
@@ -48,4 +49,5 @@ const emit = defineEmits<{
       <span>Add Task</span>
     </button>
   </div>
+  -->
 </template>
