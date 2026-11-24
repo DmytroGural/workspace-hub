@@ -20,7 +20,7 @@ import { useRoute, useRouter } from 'vue-router';
 import LexicalMarkdownEditor from '@/components/editor/LexicalMarkdownEditor.vue';
 import { useDismissibleLayer } from '@/composables/useDismissibleLayer';
 import {
-  useAccountsStore,
+  // useAccountsStore,
   useFiltersStore,
   useSyncStore,
   useTasksStore,
